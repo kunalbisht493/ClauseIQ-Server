@@ -1,7 +1,7 @@
 const { extractPdfText, chunkText } = require('./pdf.service');
 const { embedTexts } = require('./embedding.service');
 const { upsertChunks, search } = require('./vector.service');
-const { getOpenAI } = require('../config/openai');
+const { generateJson } = require("./llm.service");
 
 async function indexDocument(document) {
   const chunks = chunkText(await extractPdfText(document.fileUrl));
@@ -28,15 +28,17 @@ async function answerQuestion(document, question) {
     text: match.metadata.text,
   }));
   const context = sources.map((source) => '[Chunk ' + source.chunkIndex + ']\n' + source.text).join('\n\n');
-  const completion = await getOpenAI().chat.completions.create({
-    model: process.env.OPENAI_CHAT_MODEL || 'gpt-4o-mini',
-    response_format: { type: 'json_object' },
-    messages: [
-      { role: 'system', content: 'You are a legal-document assistant. Use only the supplied context and do not provide legal advice. Return valid JSON: {"answer":"plain-language answer","riskFlags":[{"level":"low|medium|high","clause":"quoted or paraphrased clause","reason":"why it matters","chunkIndex":0}],"insufficientContext":false}. Set insufficientContext true when the context cannot answer the question.' },
-      { role: 'user', content: 'Context:\n' + context + '\n\nQuestion: ' + question },
-    ],
+  const { content } = await generateJson({
+    systemInstruction:
+      'You are a legal-document assistant. Use only the supplied context and do not provide legal advice. Return valid JSON: {"answer":"plain-language answer","riskFlags":[{"level":"low|medium|high","clause":"quoted or paraphrased clause","reason":"why it matters","chunkIndex":0}],"insufficientContext":false}. Set insufficientContext true when the context cannot answer the question.',
+    prompt:
+      'Context:\n' +
+      context +
+      '\n\nQuestion:\n' +
+      question,
   });
-  const response = parseJsonResponse(completion.choices[0].message.content);
+
+  const response = parseJsonResponse(content);
   return {
     answer: response.answer || 'The document context did not provide an answer.',
     riskFlags: Array.isArray(response.riskFlags) ? response.riskFlags : [],
