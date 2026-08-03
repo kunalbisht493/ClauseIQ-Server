@@ -1,7 +1,15 @@
 const router = require('express').Router();
-const { register, login, logout } = require('../controllers/auth.controller');
+const { register, login, logout, confirmEmail, resendVerification, getCurrentUser, completeGoogleLogin } = require('../controllers/auth.controller');
 const { authLimiter } = require('../middleware/rateLimiter');
+const { requireAuth } = require('../middleware/auth.middleware');
+const { passport } = require('../config/passport');
+const { requireGoogleOAuth, setOAuthState, verifyOAuthState } = require('../middleware/oauth.middleware');
 router.post('/register', authLimiter, register);
 router.post('/login', authLimiter, login);
+router.get('/verify-email', authLimiter, confirmEmail);
+router.post('/resend-verification', authLimiter, resendVerification);
+router.get('/me', requireAuth, getCurrentUser);
+router.get('/google', authLimiter, requireGoogleOAuth, setOAuthState, (req, res, next) => passport.authenticate('google', { scope: ['profile', 'email'], session: false, state: res.locals.oauthState })(req, res, next));
+router.get('/google/callback', authLimiter, requireGoogleOAuth, verifyOAuthState, passport.authenticate('google', { session: false, failureRedirect: '/api/auth/google' }), completeGoogleLogin);
 router.post('/logout', logout);
 module.exports = router;

@@ -1,9 +1,16 @@
 const jwt = require('jsonwebtoken');
+const User = require('../models/User.model');
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const token = req.cookies.token;
   if (!token) return res.status(401).json({ message: 'Authentication required' });
-  try { req.user = jwt.verify(token, process.env.JWT_SECRET); return next(); }
+  try {
+    const claims = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(claims.sub);
+    if (!user) return res.status(401).json({ message: 'Invalid or expired session' });
+    req.user = user;
+    return next();
+  }
   catch { return res.status(401).json({ message: 'Invalid or expired session' }); }
 }
 
