@@ -30,7 +30,9 @@
     "multer": "^2.0.1",
     "nodemailer": "^9.0.3",
     "openai": "^5.12.2",
-    "pdf-parse": "^1.1.1"
+    "passport": "^0.7.0",
+    "passport-google-oauth20": "^2.0.0",
+    "pdfjs-dist": "^6.2.108"
   },
   "devDependencies": {
     "jest": "^30.0.5",

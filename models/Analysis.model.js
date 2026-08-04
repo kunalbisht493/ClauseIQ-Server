@@ -5,7 +5,8 @@ const analysisSchema = new mongoose.Schema({
   question: { type: String, trim: true },
   answer: String,
   riskScore: { type: Number, min: 0, max: 100, default: 0 },
-  riskClauses: [{ clause: String, level: String, score: Number, reason: String }],
+  riskLevel: { type: String, enum: ['Very Low', 'Low', 'Medium', 'High', 'Critical', ''], default: '' },
+  riskClauses: [{ clause: String, level: String, score: Number, reason: String, recommendation: String }],
   summary: { type: String, default: '' },
 }, { timestamps: true });
 
