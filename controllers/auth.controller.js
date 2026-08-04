@@ -39,8 +39,10 @@ function completeGoogleLogin(req, res) {
 }
 
 async function confirmEmail(req, res) {
-  if (!(await verifyEmail(req.query.token))) return res.status(400).json({ message: 'This verification link is invalid or has expired' });
-  res.json({ message: 'Email verified. You can now log in.' });
+  const user = await verifyEmail(req.query.token);
+  if (!user) return res.status(400).json({ message: 'This verification link is invalid or has expired' });
+  setSession(res, user);
+  res.json({ message: 'Email verified.', user: { id: user._id, name: user.name, email: user.email, emailVerified: true } });
 }
 
 async function resendVerification(req, res) {
