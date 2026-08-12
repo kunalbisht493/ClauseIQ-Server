@@ -1,3 +1,4 @@
+const fs = require('fs/promises');
 const Document = require('../models/Document.model');
 const Analysis = require('../models/Analysis.model');
 const { indexDocument } = require('../services/rag.service');
@@ -16,11 +17,12 @@ function levelFromScore(score) {
 
 function normalizeAnalysis(result) {
   const riskClauses = Array.isArray(result.risks) ? result.risks : [];
+  const scores = riskClauses.map((risk) => Number(risk.score) || 0);
 
-  const riskScore = Math.min(
-    100,
-    riskClauses.reduce((highest, risk) => Math.max(highest, Number(risk.score) || 0), 0)
-  );
+  const maxScore = scores.length ? Math.max(...scores) : 0;
+  const avgScore = scores.length ? scores.reduce((sum, s) => sum + s, 0) / scores.length : 0;
+
+  const riskScore = Math.min(100, Math.round(0.5 * maxScore + 0.5 * avgScore));
 
   return {
     summary: result.summary || '',
@@ -81,6 +83,16 @@ async function deleteDocument(req, res) {
     await deleteChunks(document.vectorNS, document._id);
   } catch (error) {
     console.error('Failed to delete vector chunks for document', document._id, error);
+  }
+
+  if (document.fileUrl) {
+    try {
+      await fs.unlink(document.fileUrl);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.error('Failed to delete file for document', document._id, error);
+      }
+    }
   }
 
   res.json({ message: 'Document deleted successfully' });

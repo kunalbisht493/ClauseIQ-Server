@@ -46,7 +46,7 @@ function parseJsonResponse(content) {
   }
 }
 
-async function answerQuestion(document, question) {
+async function answerQuestion(document, question, knownRisks = []) {
   const vector = (
     await embedTexts([question], "RETRIEVAL_QUERY")
   )[0];
@@ -89,13 +89,42 @@ async function answerQuestion(document, question) {
     )
     .join("\n\n");
 
+  const knownRisksBlock = knownRisks.length
+    ? `\n\nKnown risk flags already identified in this document by a prior full-document review (always consider these, even if not directly retrieved above; mention any that are relevant to the question, especially if they conflict with the retrieved excerpts):\n\n${knownRisks
+        .map(
+          (risk, i) =>
+            `${i + 1}. [${risk.level || "unknown"}] ${risk.clause || ""} — ${risk.reason || ""}`
+        )
+        .join("\n")}`
+    : "";
+
   const { content } = await generateJson({
     systemInstruction: `
-You are an expert legal document assistant.
+You are an expert legal document assistant helping a non-lawyer understand a contract.
 
-Answer ONLY using the supplied document context.
+Ground every factual claim ONLY in the supplied document context and the
+known risk flags list (if provided). Never invent facts, numbers, dates, or
+terms that are not present in either.
 
-Never invent information.
+However, grounding in the context does not mean quoting it back. Your job is
+to explain, interpret, and translate legal language into plain terms:
+
+- If asked to "explain," "simplify," or clarify a clause, do not just restate
+  the clause text. Say what it actually means in practice, what could happen
+  as a result, and why it matters — using only facts drawn from the context.
+- Convert technical or compounding terms into concrete outcomes wherever the
+  context supports it (e.g. a monthly rate can be expressed as its annualized
+  equivalent if the context provides the monthly figure; a notice period can
+  be explained in terms of how it limits the reader's options).
+- If the document contains more than one figure or clause on the same topic
+  (e.g. two different interest rates, two different notice periods) across
+  the retrieved excerpts or the known risk flags list, you MUST surface all
+  of them and flag the discrepancy explicitly. Do not silently answer with
+  only one figure when the context shows more than one.
+- Where the context supports comparison (e.g. this term vs. a more standard
+  numbered clause elsewhere in the document), point that out.
+- Keep the tone clear and direct, as if explaining to someone with no legal
+  background, in 2-4 sentences unless the question calls for more detail.
 
 If the answer cannot be found:
 
@@ -109,7 +138,7 @@ Otherwise return ONLY valid JSON.
 
 Do NOT use markdown.
 Do NOT wrap JSON inside \`\`\`.
-Do NOT include explanations.
+Do NOT include explanations outside the JSON structure itself.
 
 Required format:
 
@@ -130,7 +159,7 @@ Required format:
     prompt: `
 Document Context:
 
-${context}
+${context}${knownRisksBlock}
 
 Question:
 

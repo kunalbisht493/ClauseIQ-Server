@@ -14,7 +14,11 @@ async function askQuestion(req, res) {
   const question = String(req.body.question || '').trim();
   if (!question) return res.status(400).json({ message: 'A question is required' });
   if (question.length > 4000) return res.status(400).json({ message: 'Question must be 4,000 characters or fewer' });
-  const result = await answerQuestion(document, question);
+
+  const existingAnalysis = await Analysis.findOne({ documentId: document._id });
+  const knownRisks = existingAnalysis?.riskClauses || [];
+
+  const result = await answerQuestion(document, question, knownRisks);
   const analysis = await Analysis.findOneAndUpdate(
     { documentId: document._id },
     { question, answer: result.answer },
