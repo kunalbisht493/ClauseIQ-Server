@@ -16,8 +16,16 @@ function isStrongPassword(password) {
   return typeof password === 'string' && STRONG_PASSWORD_REGEX.test(password);
 }
 
+const isProduction = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
+const authCookieOptions = {
+  httpOnly: true,
+  sameSite: isProduction ? 'none' : 'lax',
+  secure: isProduction,
+  maxAge: 7 * 24 * 60 * 60 * 1000,
+};
+
 function setSession(res, user) {
-  res.cookie('token', signToken(user), { httpOnly: true, sameSite: 'lax', secure: process.env.COOKIE_SECURE === 'true', maxAge: 7 * 24 * 60 * 60 * 1000 });
+  res.cookie('token', signToken(user), authCookieOptions);
 }
 
 async function register(req, res) {
@@ -96,7 +104,7 @@ async function resetPassword(req, res) {
   if (!userId) return res.status(400).json({ message: 'This password-reset link is invalid or has expired' });
   const user = await User.findByIdAndUpdate(userId, { $set: { password: await hashPassword(newPassword) } }, { new: true });
   if (!user) return res.status(400).json({ message: 'This password-reset link is invalid or has expired' });
-  res.clearCookie('token').json({ message: 'Password reset successfully. Please log in.' });
+  res.clearCookie('token', authCookieOptions).json({ message: 'Password reset successfully. Please log in.' });
 }
 
 async function changePassword(req, res) {
@@ -169,8 +177,8 @@ async function deleteAccount(req, res) {
     throw error;
   }
 
-  res.clearCookie('token').json({ message: 'Account deleted', deletedDocuments: documents.length });
+  res.clearCookie('token', authCookieOptions).json({ message: 'Account deleted', deletedDocuments: documents.length });
 }
 
-function logout(_req, res) { res.clearCookie('token').status(204).end(); }
+function logout(_req, res) { res.clearCookie('token', authCookieOptions).status(204).end(); }
 module.exports = { register, login, logout, confirmEmail, resendVerification, requestPasswordReset, resetPassword, getCurrentUser, completeGoogleLogin, changePassword, deleteAccount };

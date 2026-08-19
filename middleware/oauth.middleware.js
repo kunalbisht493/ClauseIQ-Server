@@ -2,7 +2,8 @@ const crypto = require('crypto');
 const { googleOAuthEnabled } = require('../config/passport');
 
 const stateCookieName = 'google_oauth_state';
-const cookieOptions = { httpOnly: true, sameSite: 'lax', secure: process.env.COOKIE_SECURE === 'true', maxAge: 10 * 60 * 1000 };
+const isProduction = process.env.NODE_ENV === 'production' || process.env.COOKIE_SECURE === 'true';
+const cookieOptions = { httpOnly: true, sameSite: isProduction ? 'none' : 'lax', secure: isProduction, maxAge: 10 * 60 * 1000 };
 
 function requireGoogleOAuth(_req, res, next) {
   if (!googleOAuthEnabled) return res.status(503).json({ message: 'Google OAuth is not configured' });
