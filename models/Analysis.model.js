@@ -8,6 +8,30 @@ const analysisSchema = new mongoose.Schema({
   riskLevel: { type: String, enum: ['Very Low', 'Low', 'Medium', 'High', 'Critical', ''], default: '' },
   riskClauses: [{ clause: String, level: String, score: Number, reason: String, recommendation: String }],
   summary: { type: String, default: '' },
+  qaHistory: [
+    {
+      question: { type: String, trim: true },
+      answer: String,
+      sources: [
+        {
+          chunkIndex: Number,
+          score: Number,
+          text: String,
+        },
+      ],
+      riskFlags: [
+        {
+          clause: String,
+          level: String,
+          score: Number,
+          reason: String,
+          chunkIndex: Number,
+        },
+      ],
+      insufficientContext: { type: Boolean, default: false },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ],
 }, { timestamps: true });
 
 module.exports = mongoose.model('Analysis', analysisSchema);

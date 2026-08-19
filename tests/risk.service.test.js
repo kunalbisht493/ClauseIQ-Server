@@ -13,6 +13,8 @@ describe('assessRisks', () => {
     await expect(assessRisks('contract text')).resolves.toEqual({
       provider: 'gemini',
       summary: 'One material risk.',
+      overallRiskScore: 0,
+      overallRiskLevel: 'Low',
       risks: [{ clause: 'Auto-renewal', level: 'high', score: 80, reason: 'Requires notice.' }],
     });
   });

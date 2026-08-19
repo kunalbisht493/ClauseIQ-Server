@@ -1,13 +1,13 @@
 jest.mock('../config/gmail', () => ({ getGmailTransport: jest.fn() }));
 
 const { getGmailTransport } = require('../config/gmail');
-const { sendVerificationEmail } = require('../services/email.service');
+const { sendVerificationEmail, sendPasswordResetEmail } = require('../services/email.service');
 
-describe('sendVerificationEmail', () => {
+describe('email.service', () => {
   const previousEnv = { ...process.env };
 
   beforeEach(() => {
-    process.env.API_ORIGIN = 'https://api.example.test';
+    process.env.CLIENT_ORIGIN = 'https://app.example.test';
     process.env.GMAIL_USER = 'verify@example.test';
     getGmailTransport.mockReturnValue({ sendMail: jest.fn().mockResolvedValue({ messageId: 'email-id' }) });
   });
@@ -23,8 +23,19 @@ describe('sendVerificationEmail', () => {
     expect(getGmailTransport().sendMail).toHaveBeenCalledWith(expect.objectContaining({
       to: 'person@example.test',
       subject: 'Verify your email address',
-      text: expect.stringContaining('https://api.example.test/api/auth/verify-email?token=safe-token'),
+      text: expect.stringContaining('https://app.example.test/verify-email?token=safe-token'),
       html: expect.stringContaining('Ada &lt;Admin&gt;'),
+    }));
+  });
+
+  it('sends an expiring password reset link through Gmail SMTP with 5-minute TTL', async () => {
+    await sendPasswordResetEmail({ email: 'person@example.test', name: 'Ada', token: 'reset-token-123' });
+
+    expect(getGmailTransport().sendMail).toHaveBeenCalledWith(expect.objectContaining({
+      to: 'person@example.test',
+      subject: 'Reset your password',
+      text: expect.stringContaining('https://app.example.test/reset-password?token=reset-token-123'),
+      html: expect.stringContaining('This link expires in 5 minutes.'),
     }));
   });
 });

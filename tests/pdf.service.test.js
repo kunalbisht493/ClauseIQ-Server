@@ -1,4 +1,9 @@
-const { chunkText } = require('../services/pdf.service');
+jest.mock('../services/ocr.service', () => ({
+  extractTextWithGemini: jest.fn(),
+}));
+
+const { chunkText, extractPdfText } = require('../services/pdf.service');
+const { extractTextWithGemini } = require('../services/ocr.service');
 
 describe('chunkText', () => {
   it('creates token-bounded chunks with overlap', () => {
@@ -14,3 +19,4 @@ describe('chunkText', () => {
     expect(() => chunkText('text', 50, 50)).toThrow('RAG_CHUNK_OVERLAP');
   });
 });
+

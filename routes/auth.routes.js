@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { register, login, logout, confirmEmail, resendVerification, getCurrentUser, completeGoogleLogin, changePassword, deleteAccount } = require('../controllers/auth.controller');
+const { register, login, logout, confirmEmail, resendVerification, requestPasswordReset, resetPassword, getCurrentUser, completeGoogleLogin, changePassword, deleteAccount } = require('../controllers/auth.controller');
 const { authLimiter } = require('../middleware/rateLimiter');
 const { requireAuth } = require('../middleware/auth.middleware');
 const { passport } = require('../config/passport');
@@ -9,6 +9,8 @@ router.post('/register', authLimiter, asyncHandler(register));
 router.post('/login', authLimiter, asyncHandler(login));
 router.get('/verify-email', authLimiter, asyncHandler(confirmEmail));
 router.post('/resend-verification', authLimiter, asyncHandler(resendVerification));
+router.post('/forgot-password', authLimiter, asyncHandler(requestPasswordReset));
+router.post('/reset-password', authLimiter, asyncHandler(resetPassword));
 router.get('/me', requireAuth, asyncHandler(getCurrentUser));
 router.post('/change-password', authLimiter, requireAuth, asyncHandler(changePassword));
 router.delete('/me', authLimiter, requireAuth, asyncHandler(deleteAccount));

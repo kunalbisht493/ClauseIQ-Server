@@ -4,7 +4,7 @@ const { upsertChunks, search } = require("./vector.service");
 const { generateJson } = require("./llm.service");
 
 async function indexDocument(document) {
-  const text = await extractPdfText(document.fileUrl);
+  const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
 
   const chunks = chunkText(text);
 

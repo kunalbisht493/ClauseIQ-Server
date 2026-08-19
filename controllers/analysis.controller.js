@@ -19,9 +19,21 @@ async function askQuestion(req, res) {
   const knownRisks = existingAnalysis?.riskClauses || [];
 
   const result = await answerQuestion(document, question, knownRisks);
+  const qaEntry = {
+    question,
+    answer: result.answer,
+    sources: result.sources || [],
+    riskFlags: result.riskFlags || [],
+    insufficientContext: Boolean(result.insufficientContext),
+    createdAt: new Date(),
+  };
+
   const analysis = await Analysis.findOneAndUpdate(
     { documentId: document._id },
-    { question, answer: result.answer },
+    {
+      $set: { question, answer: result.answer },
+      $push: { qaHistory: qaEntry },
+    },
     { new: true, upsert: true, setDefaultsOnInsert: true },
   );
   res.json({ ...result, analysis });

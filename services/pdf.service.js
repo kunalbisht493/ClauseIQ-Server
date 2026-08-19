@@ -1,7 +1,8 @@
 const fs = require("fs/promises");
 const { getEncoding } = require("js-tiktoken");
+const { extractTextWithGemini } = require("./ocr.service");
 
-async function extractPdfText(filePath) {
+async function extractPdfText(filePath, mimeType = "application/pdf") {
   const buffer = await fs.readFile(filePath);
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
 
@@ -24,7 +25,22 @@ async function extractPdfText(filePath) {
         .join(" ") + "\n";
   }
 
-  return text.trim();
+  const trimmedText = text.trim();
+  if (trimmedText) {
+    return trimmedText;
+  }
+
+  // Fallback to OCR if PDF contains only scanned images / no selectable text
+  try {
+    const ocrText = await extractTextWithGemini(filePath, mimeType);
+    if (ocrText && ocrText.trim()) {
+      return ocrText.trim();
+    }
+  } catch (ocrError) {
+    console.warn("OCR fallback failed or returned empty text:", ocrError.message);
+  }
+
+  return "";
 }
 
 function chunkText(

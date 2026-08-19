@@ -51,7 +51,7 @@ async function uploadDocument(req, res) {
     document.status = 'ready';
     document.chunkCount = chunkCount;
     await document.save();
-    const result = await assessRisks(await extractPdfText(document.fileUrl));
+    const result = await assessRisks(await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf'));
     await Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) });
   } catch (error) {
     document.status = 'failed';

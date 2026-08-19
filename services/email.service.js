@@ -20,4 +20,16 @@ async function sendVerificationEmail({ email, name, token }) {
   });
 }
 
-module.exports = { sendVerificationEmail };
+async function sendPasswordResetEmail({ email, name, token }) {
+  const origin = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+  const url = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
+  await getGmailTransport().sendMail({
+    from: process.env.EMAIL_FROM || process.env.GMAIL_USER,
+    to: email,
+    subject: 'Reset your password',
+    html: `<p>Hi ${escapeHtml(name)},</p><p>Use the link below to set a new password.</p><p><a href="${url}">Reset password</a></p><p>This link expires in 5 minutes. If you did not request this, you can ignore this email.</p>`,
+    text: `Hi ${name},\n\nReset your password: ${url}\n\nThis link expires in 5 minutes. If you did not request this, you can ignore this email.`,
+  });
+}
+
+module.exports = { sendVerificationEmail, sendPasswordResetEmail };

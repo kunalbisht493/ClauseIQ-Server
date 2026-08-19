@@ -3,9 +3,18 @@ const User = require('../models/User.model');
 const Document = require('../models/Document.model');
 const Analysis = require('../models/Analysis.model');
 const EmailVerification = require('../models/EmailVerification.model');
+const PasswordReset = require('../models/PasswordReset.model');
 const { hashPassword, comparePassword, signToken } = require('../services/auth.service');
 const { createAndSendVerification, verifyEmail } = require('../services/emailVerification.service');
+const { createAndSendPasswordReset, consumePasswordReset } = require('../services/passwordReset.service');
 const { deleteChunks } = require('../services/vector.service');
+
+const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const STRONG_PASSWORD_MSG = 'Password must be at least 8 characters long and contain at least one uppercase letter, one lowercase letter, one number, and one special character';
+
+function isStrongPassword(password) {
+  return typeof password === 'string' && STRONG_PASSWORD_REGEX.test(password);
+}
 
 function setSession(res, user) {
   res.cookie('token', signToken(user), { httpOnly: true, sameSite: 'lax', secure: process.env.COOKIE_SECURE === 'true', maxAge: 7 * 24 * 60 * 60 * 1000 });
@@ -14,7 +23,8 @@ function setSession(res, user) {
 async function register(req, res) {
   const { name, password } = req.body;
   const email = String(req.body.email || '').trim().toLowerCase();
-  if (!name || !email || !password || password.length < 8) return res.status(400).json({ message: 'Name, email, and an 8-character password are required' });
+  if (!name || !email || !password) return res.status(400).json({ message: 'Name, email, and password are required' });
+  if (!isStrongPassword(password)) return res.status(400).json({ message: STRONG_PASSWORD_MSG });
   if (await User.exists({ email })) return res.status(409).json({ message: 'Email already registered' });
   const user = await User.create({ name, email, password: await hashPassword(password) });
   try {
@@ -67,11 +77,36 @@ async function resendVerification(req, res) {
   res.json({ message: 'If an unverified account exists, a verification email has been sent.' });
 }
 
+async function requestPasswordReset(req, res) {
+  const email = String(req.body.email || '').trim().toLowerCase();
+  if (email) {
+    const user = await User.findOne({ email }).select('+password');
+    if (user?.emailVerified && user.password) {
+      await createAndSendPasswordReset(user);
+    }
+  }
+  res.json({ message: 'If an account exists for this email, a password-reset link has been sent.' });
+}
+
+async function resetPassword(req, res) {
+  const { token, newPassword } = req.body;
+  if (!newPassword) return res.status(400).json({ message: 'A new password is required' });
+  if (!isStrongPassword(newPassword)) return res.status(400).json({ message: STRONG_PASSWORD_MSG });
+  const userId = await consumePasswordReset(token);
+  if (!userId) return res.status(400).json({ message: 'This password-reset link is invalid or has expired' });
+  const user = await User.findByIdAndUpdate(userId, { $set: { password: await hashPassword(newPassword) } }, { new: true });
+  if (!user) return res.status(400).json({ message: 'This password-reset link is invalid or has expired' });
+  res.clearCookie('token').json({ message: 'Password reset successfully. Please log in.' });
+}
+
 async function changePassword(req, res) {
   const { currentPassword, newPassword } = req.body;
 
-  if (!newPassword || newPassword.length < 8) {
-    return res.status(400).json({ message: 'A new password of at least 8 characters is required' });
+  if (!newPassword) {
+    return res.status(400).json({ message: 'A new password is required' });
+  }
+  if (!isStrongPassword(newPassword)) {
+    return res.status(400).json({ message: STRONG_PASSWORD_MSG });
   }
 
   const user = await User.findById(req.user._id).select('+password');
@@ -94,6 +129,7 @@ async function changePassword(req, res) {
 async function deleteAccount(req, res) {
   const { currentPassword } = req.body;
   const user = await User.findById(req.user._id).select('+password');
+  if (!user) return res.status(401).json({ message: 'Invalid or expired session' });
 
   if (user.password) {
     if (!currentPassword || !(await comparePassword(currentPassword, user.password))) {
@@ -101,14 +137,15 @@ async function deleteAccount(req, res) {
     }
   }
 
-  const documents = await Document.find({ userId: user._id });
+  // `user` is included for documents created before the schema was renamed to
+  // `userId`, so deleting an account also cleans up legacy data.
+  const documentOwnerFilter = { $or: [{ userId: user._id }, { user: user._id }] };
+  const documents = await Document.find(documentOwnerFilter);
 
   for (const document of documents) {
-    try {
-      await deleteChunks(document.vectorNS, document._id);
-    } catch (error) {
-      console.error('Failed to delete vector chunks for document', document._id, error);
-    }
+    // Do not report a successful account deletion while its vector data is
+    // still present. The request can safely be retried after Qdrant recovers.
+    await deleteChunks(document.vectorNS, document._id);
 
     if (document.fileUrl) {
       try {
@@ -122,12 +159,18 @@ async function deleteAccount(req, res) {
   }
 
   await Analysis.deleteMany({ documentId: { $in: documents.map((d) => d._id) } });
-  await Document.deleteMany({ userId: user._id });
+  await Document.deleteMany(documentOwnerFilter);
   await EmailVerification.deleteMany({ user: user._id });
-  await User.deleteOne({ _id: user._id });
+  await PasswordReset.deleteMany({ user: user._id });
+  const deletedUser = await User.findByIdAndDelete(user._id);
+  if (!deletedUser || await User.exists({ _id: user._id })) {
+    const error = new Error('Account could not be deleted');
+    error.status = 500;
+    throw error;
+  }
 
-  res.clearCookie('token').json({ message: 'Account deleted' });
+  res.clearCookie('token').json({ message: 'Account deleted', deletedDocuments: documents.length });
 }
 
 function logout(_req, res) { res.clearCookie('token').status(204).end(); }
-module.exports = { register, login, logout, confirmEmail, resendVerification, getCurrentUser, completeGoogleLogin, changePassword, deleteAccount };
+module.exports = { register, login, logout, confirmEmail, resendVerification, requestPasswordReset, resetPassword, getCurrentUser, completeGoogleLogin, changePassword, deleteAccount };
