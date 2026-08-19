@@ -30,7 +30,8 @@
     "nodemailer": "^9.0.3",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
-    "pdfjs-dist": "^6.2.108"
+    "pdfjs-dist": "^6.2.108",
+    "resend": "^6.20.0"
   },
   "devDependencies": {
     "jest": "^30.0.5",

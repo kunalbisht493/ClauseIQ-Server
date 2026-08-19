@@ -59,7 +59,8 @@ app.get('/health', async (_req, res) => {
     status.qdrant = 'error';
   }
 
-  status.emailConfigured = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+  status.emailConfigured = Boolean(process.env.RESEND_API_KEY || (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD));
+  status.emailProvider = process.env.RESEND_API_KEY ? 'resend' : (process.env.GMAIL_USER ? 'gmail' : 'none');
 
   res.json(status);
 });

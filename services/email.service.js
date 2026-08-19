@@ -1,3 +1,4 @@
+const { Resend } = require('resend');
 const { getGmailTransport } = require('../config/gmail');
 
 function escapeHtml(value) {
@@ -10,17 +11,48 @@ function verificationUrl(token) {
 }
 
 function getSender() {
-  const gmailUser = (process.env.GMAIL_USER || '').trim();
   if (process.env.EMAIL_FROM) return process.env.EMAIL_FROM;
+  if (process.env.RESEND_API_KEY) {
+    return 'ClauseIQ <onboarding@resend.dev>';
+  }
+  const gmailUser = (process.env.GMAIL_USER || '').trim();
   return `"ClauseIQ" <${gmailUser}>`;
+}
+
+async function dispatchEmail({ to, subject, html, text }) {
+  const from = getSender();
+
+  if (process.env.RESEND_API_KEY) {
+    const resend = new Resend(process.env.RESEND_API_KEY.trim());
+    const { data, error } = await resend.emails.send({
+      from,
+      to: [to],
+      subject,
+      html,
+      text,
+    });
+
+    if (error) {
+      console.error('[RESEND API ERROR]:', error);
+      throw new Error(error.message || 'Failed to send email via Resend API');
+    }
+    return data;
+  }
+
+  // Fallback to Gmail SMTP for local testing
+  return getGmailTransport().sendMail({
+    from,
+    to,
+    subject,
+    html,
+    text,
+  });
 }
 
 async function sendVerificationEmail({ email, name, token }) {
   const url = verificationUrl(token);
-  const from = getSender();
 
-  await getGmailTransport().sendMail({
-    from,
+  await dispatchEmail({
     to: email,
     subject: 'Verify your email address',
     html: `
@@ -46,10 +78,8 @@ async function sendVerificationEmail({ email, name, token }) {
 
 async function sendPasswordResetEmail({ email, name, token }) {
   const url = `${(process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '')}/reset-password?token=${encodeURIComponent(token)}`;
-  const from = getSender();
 
-  await getGmailTransport().sendMail({
-    from,
+  await dispatchEmail({
     to: email,
     subject: 'Reset your password',
     html: `
