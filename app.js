@@ -59,6 +59,8 @@ app.get('/health', async (_req, res) => {
     status.qdrant = 'error';
   }
 
+  status.emailConfigured = Boolean(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD);
+
   res.json(status);
 });
 

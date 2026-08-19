@@ -38,7 +38,8 @@ async function register(req, res) {
   try {
     await createAndSendVerification(user);
   } catch (error) {
-    return res.status(503).json({ message: 'Account created, but the verification email could not be sent. Please try again shortly.' });
+    console.error('[AUTH] Failed to send initial verification email:', error.message);
+    return res.status(503).json({ message: 'Account created, but the verification email could not be delivered. Please try resending shortly or check your spam folder.' });
   }
   res.status(201).json({ message: 'Verification email sent', user: { id: user._id, name: user.name, email: user.email, emailVerified: false, hasPassword: true } });
 }
@@ -84,7 +85,14 @@ async function resendVerification(req, res) {
   const email = String(req.body.email || '').trim().toLowerCase();
   if (!email) return res.status(400).json({ message: 'Email is required' });
   const user = await User.findOne({ email });
-  if (user && !user.emailVerified) await createAndSendVerification(user);
+  if (user && !user.emailVerified) {
+    try {
+      await createAndSendVerification(user);
+    } catch (err) {
+      console.error('[AUTH] Failed to resend verification email:', err.message);
+      return res.status(503).json({ message: 'Could not deliver verification email. Please check your spam folder or verify server email settings.' });
+    }
+  }
   res.json({ message: 'If an unverified account exists, a verification email has been sent.' });
 }
 
@@ -93,7 +101,11 @@ async function requestPasswordReset(req, res) {
   if (email) {
     const user = await User.findOne({ email }).select('+password');
     if (user?.emailVerified && user.password) {
-      await createAndSendPasswordReset(user);
+      try {
+        await createAndSendPasswordReset(user);
+      } catch (err) {
+        console.error('[AUTH] Failed to send password reset email:', err.message);
+      }
     }
   }
   res.json({ message: 'If an account exists for this email, a password-reset link has been sent.' });
