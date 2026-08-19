@@ -12,7 +12,14 @@ async function createAndSendPasswordReset(user) {
     { tokenHash: hashToken(token), expiresAt: new Date(Date.now() + RESET_TTL_MS) },
     { upsert: true, new: true, setDefaultsOnInsert: true },
   );
-  await sendPasswordResetEmail({ email: user.email, name: user.name, token });
+  let emailSent = false;
+  try {
+    await sendPasswordResetEmail({ email: user.email, name: user.name, token });
+    emailSent = true;
+  } catch (err) {
+    console.warn('[AUTH] Could not deliver reset email (fallback available):', err.message);
+  }
+  return { token, emailSent };
 }
 
 async function consumePasswordReset(token) {

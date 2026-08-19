@@ -34,20 +34,54 @@ async function register(req, res) {
   if (!name || !email || !password) return res.status(400).json({ message: 'Name, email, and password are required' });
   if (!isStrongPassword(password)) return res.status(400).json({ message: STRONG_PASSWORD_MSG });
   if (await User.exists({ email })) return res.status(409).json({ message: 'Email already registered' });
-  const user = await User.create({ name, email, password: await hashPassword(password) });
+
+  const shouldAutoVerify = process.env.AUTO_VERIFY_EMAIL !== 'false';
+  const user = await User.create({
+    name,
+    email,
+    password: await hashPassword(password),
+    emailVerified: shouldAutoVerify,
+  });
+
+  if (!shouldAutoVerify) {
+    try {
+      await createAndSendVerification(user);
+    } catch (error) {
+      console.error('[AUTH] Failed to send initial verification email:', error.message);
+      return res.status(503).json({ message: 'Account created, but the verification email could not be delivered. Please try resending shortly or check your spam folder.' });
+    }
+    return res.status(201).json({ message: 'Verification email sent', user: { id: user._id, name: user.name, email: user.email, emailVerified: false, hasPassword: true } });
+  }
+
+  // Attempt sending welcome/verification email in background if configured, without failing registration
   try {
     await createAndSendVerification(user);
-  } catch (error) {
-    console.error('[AUTH] Failed to send initial verification email:', error.message);
-    return res.status(503).json({ message: 'Account created, but the verification email could not be delivered. Please try resending shortly or check your spam folder.' });
+  } catch (_) {
+    // Delivery skipped or failed on unverified free domains
   }
-  res.status(201).json({ message: 'Verification email sent', user: { id: user._id, name: user.name, email: user.email, emailVerified: false, hasPassword: true } });
+
+  setSession(res, user);
+  const token = signToken(user);
+  res.status(201).json({
+    message: 'Account created successfully!',
+    token,
+    user: { id: user._id, name: user.name, email: user.email, emailVerified: true, hasPassword: true },
+  });
 }
 
 async function login(req, res) {
   const user = await User.findOne({ email: req.body.email }).select('+password');
   if (!user || !(await comparePassword(req.body.password || '', user.password))) return res.status(401).json({ message: 'Invalid email or password' });
-  if (!user.emailVerified) return res.status(403).json({ message: 'Please verify your email before logging in' });
+  
+  if (!user.emailVerified) {
+    if (process.env.AUTO_VERIFY_EMAIL !== 'false') {
+      user.emailVerified = true;
+      await user.save();
+    } else {
+      return res.status(403).json({ message: 'Please verify your email before logging in' });
+    }
+  }
+
   setSession(res, user);
   const token = signToken(user);
   res.json({ token, user: { id: user._id, name: user.name, email: user.email, hasPassword: true } });
@@ -98,16 +132,29 @@ async function resendVerification(req, res) {
 
 async function requestPasswordReset(req, res) {
   const email = String(req.body.email || '').trim().toLowerCase();
+  let resetUrl = null;
   if (email) {
     const user = await User.findOne({ email }).select('+password');
-    if (user?.emailVerified && user.password) {
+    if (user && user.password) {
       try {
-        await createAndSendPasswordReset(user);
+        const { token, emailSent } = await createAndSendPasswordReset(user);
+        if (!emailSent) {
+          const origin = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
+          resetUrl = `${origin}/reset-password?token=${encodeURIComponent(token)}`;
+        }
       } catch (err) {
-        console.error('[AUTH] Failed to send password reset email:', err.message);
+        console.error('[AUTH] Failed to create password reset:', err.message);
       }
     }
   }
+
+  if (resetUrl) {
+    return res.json({
+      message: 'Password reset link ready.',
+      resetUrl,
+    });
+  }
+
   res.json({ message: 'If an account exists for this email, a password-reset link has been sent.' });
 }
 
