@@ -15,13 +15,7 @@ jobs:
         run: |
           TARGET_URL="${{ secrets.SERVER_HEALTH_URL }}"
           if [ -z "$TARGET_URL" ]; then
-            TARGET_URL="${{ secrets.API_ORIGIN }}/health"
-          fi
-
-          if [ -z "$TARGET_URL" ] || [ "$TARGET_URL" = "/health" ]; then
-            echo "⚠️ No SERVER_HEALTH_URL secret configured in GitHub repository."
-            echo "Please add SERVER_HEALTH_URL (e.g., https://your-backend.onrender.com/health) under Repo Settings -> Secrets."
-            exit 0
+            TARGET_URL="https://clauseiq-server.onrender.com/health"
           fi
 
           echo "Pinging health endpoint: $TARGET_URL"
