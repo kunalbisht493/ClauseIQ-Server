@@ -1,13 +1,38 @@
-name: Keep server alive
+name: Keep-Alive Heartbeat (Backend + MongoDB + Qdrant)
 
 on:
   schedule:
+    # Runs every 10 minutes to prevent Render spin-down & keep DBs warm
     - cron: '*/10 * * * *'
-  workflow_dispatch:
+  workflow_dispatch: # Allows manual trigger from GitHub UI
 
 jobs:
   ping:
+    name: Ping Health & Keep Services Warm
     runs-on: ubuntu-latest
     steps:
-      - name: Ping health endpoint
-        run: curl -sf https://YOUR-RENDER-URL.onrender.com/health
+      - name: Send Heartbeat Ping to /health
+        run: |
+          TARGET_URL="${{ secrets.SERVER_HEALTH_URL }}"
+          if [ -z "$TARGET_URL" ]; then
+            TARGET_URL="${{ secrets.API_ORIGIN }}/health"
+          fi
+
+          if [ -z "$TARGET_URL" ] || [ "$TARGET_URL" = "/health" ]; then
+            echo "⚠️ No SERVER_HEALTH_URL secret configured in GitHub repository."
+            echo "Please add SERVER_HEALTH_URL (e.g., https://your-backend.onrender.com/health) under Repo Settings -> Secrets."
+            exit 0
+          fi
+
+          echo "Pinging health endpoint: $TARGET_URL"
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" "$TARGET_URL")
+          echo "Health Probe Response:"
+          echo "$RESPONSE"
+
+          HTTP_STATUS=$(echo "$RESPONSE" | grep "HTTP_STATUS" | cut -d: -f2)
+          if [ "$HTTP_STATUS" -eq 200 ]; then
+            echo "✅ Heartbeat successful! Backend, MongoDB, and Qdrant are active."
+          else
+            echo "❌ Health check returned HTTP status $HTTP_STATUS"
+            exit 1
+          fi
