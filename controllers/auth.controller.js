@@ -48,7 +48,8 @@ async function login(req, res) {
   if (!user || !(await comparePassword(req.body.password || '', user.password))) return res.status(401).json({ message: 'Invalid email or password' });
   if (!user.emailVerified) return res.status(403).json({ message: 'Please verify your email before logging in' });
   setSession(res, user);
-  res.json({ user: { id: user._id, name: user.name, email: user.email, hasPassword: true } });
+  const token = signToken(user);
+  res.json({ token, user: { id: user._id, name: user.name, email: user.email, hasPassword: true } });
 }
 
 async function getCurrentUser(req, res) {
@@ -66,15 +67,17 @@ async function getCurrentUser(req, res) {
 
 function completeGoogleLogin(req, res) {
   setSession(res, req.user);
+  const token = signToken(req.user);
   const clientOrigin = (process.env.CLIENT_ORIGIN || 'http://localhost:5173').replace(/\/$/, '');
-  res.redirect(`${clientOrigin}/auth/callback`);
+  res.redirect(`${clientOrigin}/auth/callback?token=${encodeURIComponent(token)}`);
 }
 
 async function confirmEmail(req, res) {
   const user = await verifyEmail(req.query.token);
   if (!user) return res.status(400).json({ message: 'This verification link is invalid or has expired' });
   setSession(res, user);
-  res.json({ message: 'Email verified.', user: { id: user._id, name: user.name, email: user.email, emailVerified: true, hasPassword: true } });
+  const token = signToken(user);
+  res.json({ message: 'Email verified.', token, user: { id: user._id, name: user.name, email: user.email, emailVerified: true, hasPassword: true } });
 }
 
 async function resendVerification(req, res) {
