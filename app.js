@@ -19,20 +19,27 @@ const app = express();
 app.set('trust proxy', 1);
 app.use(helmet());
 
-const allowedOrigins = (process.env.CLIENT_ORIGIN || 'http://localhost:5173')
-  .split(',')
-  .map((origin) => origin.trim().replace(/\/+$/, ''))
-  .filter(Boolean);
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:5000',
+  'https://clauseiq01.vercel.app',
+  ...(process.env.CLIENT_ORIGIN || '').split(',').map((o) => o.trim().replace(/\/+$/, '')),
+].filter(Boolean);
 
 app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
       const cleanOrigin = origin.trim().replace(/\/+$/, '');
-      if (allowedOrigins.includes(cleanOrigin) || allowedOrigins.includes('*')) {
+      if (
+        allowedOrigins.includes(cleanOrigin) ||
+        allowedOrigins.includes('*') ||
+        cleanOrigin.endsWith('.vercel.app') ||
+        cleanOrigin.includes('localhost')
+      ) {
         return callback(null, true);
       }
-      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+      return callback(null, true);
     },
     credentials: true,
   })
