@@ -9,16 +9,23 @@ function pointId(documentId, chunkIndex) {
   return raw.slice(0, 8) + '-' + raw.slice(8, 12) + '-' + raw.slice(12, 16) + '-' + raw.slice(16, 20) + '-' + raw.slice(20, 32);
 }
 
+const ensuredCollections = new Set();
+
 async function ensureCollection(vectorSize) {
   const client = getQdrant();
   const collection = getCollectionName();
+  if (ensuredCollections.has(collection)) {
+    return { client, collection };
+  }
   try {
     await client.getCollection(collection);
+    ensuredCollections.add(collection);
   } catch (error) {
     if (error.status !== 404) throw error;
     await client.createCollection(collection, { vectors: { size: vectorSize, distance: 'Cosine' } });
     await client.createPayloadIndex(collection, { field_name: 'vectorNS', field_schema: 'keyword' });
     await client.createPayloadIndex(collection, { field_name: 'documentId', field_schema: 'keyword' });
+    ensuredCollections.add(collection);
   }
   return { client, collection };
 }

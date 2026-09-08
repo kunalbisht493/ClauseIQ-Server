@@ -15,7 +15,7 @@ async function callGemini({ systemInstruction, prompt }) {
   for (let attempt = 1; attempt <= MAX_GEMINI_ATTEMPTS; attempt++) {
     try {
       const response = await getGemini().models.generateContent({
-        model: process.env.GEMINI_MODEL || "gemini-3.5-flash",
+        model: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
         contents: prompt,
         config: {
           systemInstruction,

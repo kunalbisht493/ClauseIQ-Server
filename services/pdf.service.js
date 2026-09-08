@@ -2,9 +2,19 @@ const fs = require("fs/promises");
 const { getEncoding } = require("js-tiktoken");
 const { extractTextWithGemini } = require("./ocr.service");
 
+let pdfjsPromise = null;
+function getPdfJs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
+  }
+  return pdfjsPromise;
+}
+
 async function extractPdfText(filePath, mimeType = "application/pdf") {
-  const buffer = await fs.readFile(filePath);
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const [buffer, pdfjs] = await Promise.all([
+    fs.readFile(filePath),
+    getPdfJs(),
+  ]);
 
   const uint8 = new Uint8Array(buffer);
 
@@ -13,17 +23,14 @@ async function extractPdfText(filePath, mimeType = "application/pdf") {
     useSystemFonts: true,
   }).promise;
 
-  let text = "";
-
-  for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-    const page = await pdf.getPage(pageNum);
+  const pagePromises = Array.from({ length: pdf.numPages }, async (_, i) => {
+    const page = await pdf.getPage(i + 1);
     const content = await page.getTextContent();
+    return content.items.map((item) => item.str).join(" ");
+  });
 
-    text +=
-      content.items
-        .map((item) => item.str)
-        .join(" ") + "\n";
-  }
+  const pageTexts = await Promise.all(pagePromises);
+  const text = pageTexts.join("\n");
 
   const trimmedText = text.trim();
   if (trimmedText) {

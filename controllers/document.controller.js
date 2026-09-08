@@ -55,8 +55,10 @@ async function uploadDocument(req, res) {
 
     document.status = 'ready';
     document.chunkCount = chunkCount;
-    await document.save();
-    await Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) });
+    await Promise.all([
+      document.save(),
+      Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) }),
+    ]);
   } catch (error) {
     document.status = 'failed';
     document.error = error.message;
