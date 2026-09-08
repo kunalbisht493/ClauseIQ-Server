@@ -168,7 +168,7 @@ Question:
 
 ${question}
 `,
-    preferredProvider: process.env.QA_LLM_PROVIDER || "groq",
+    preferredProvider: process.env.QA_LLM_PROVIDER || "gemini",
   });
 
   const response = parseJsonResponse(content);

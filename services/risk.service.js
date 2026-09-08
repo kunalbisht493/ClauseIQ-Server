@@ -61,13 +61,12 @@ Specifically evaluate the contract for:
 - Unreasonable obligations
 - Any clause that is unusually favorable to one party
 
-Assign an overall contract risk score using:
-
-0-20   = Very Low
-21-40  = Low
-41-60  = Medium
-61-80  = High
-81-100 = Critical
+Calibrate clause risk scores accurately according to these exact severity bands:
+- 0-20   = Very Low (routine standard boilerplate, balanced mutual clauses)
+- 21-40  = Low (standard operational terms, routine notice periods, standard working hours/leave, minor interest on late payments)
+- 41-60  = Medium (moderately firm terms, tight acceptance/cure windows, liability caps tied to fees paid)
+- 61-80  = High (substantially one-sided provisions, onerous post-termination restrictions, broad summary dismissal, unilateral alteration rights)
+- 81-100 = Critical (unlimited liability, permanent non-competes, total forfeiture of compensation, unlimited indemnification)
 
 Your "overallRiskScore" and "summary" must be consistent with the severity
 of items in "risks". If "risks" contains any critical or high-severity
@@ -98,8 +97,9 @@ Rules:
 - Do not ignore clauses because they appear near the end.
 - Report every risky clause you find.
 - Always include the exact clause number and title in the 'clause' field (e.g., '10. Non-Compete').
+- Do not inflate routine operational clauses (like standard working hours, standard leave policies, or equipment care) to High. Keep them Low or Medium.
+- For neutral, balanced, or standard agreements that lack severe hazards, still identify standard commercial considerations, operational obligations, or areas of potential ambiguity as Low or Medium risk (scores 15-35). Every commercial contract has routine risk factors; never return an empty risks array or 0 score for a valid contract.
 - Classify severe one-sided clauses as High or Critical.
-- If there are no significant risks, return an empty risks array.
 - Return ONLY JSON.
 `,
 
