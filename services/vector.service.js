@@ -31,7 +31,7 @@ async function upsertChunks(vectorNS, documentId, chunks, vectors) {
     payload: { vectorNS, documentId: String(documentId), text, chunkIndex: index },
   }));
   for (let start = 0; start < records.length; start += 100) {
-    await client.upsert(collection, { wait: true, points: records.slice(start, start + 100) });
+    await client.upsert(collection, { wait: false, points: records.slice(start, start + 100) });
   }
 }
 

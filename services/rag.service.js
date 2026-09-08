@@ -3,9 +3,7 @@ const { embedTexts } = require("./embedding.service");
 const { upsertChunks, search } = require("./vector.service");
 const { generateJson } = require("./llm.service");
 
-async function indexDocument(document) {
-  const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
-
+async function indexText(document, text) {
   const chunks = chunkText(text);
 
   if (!chunks.length) {
@@ -22,6 +20,11 @@ async function indexDocument(document) {
   );
 
   return chunks.length;
+}
+
+async function indexDocument(document) {
+  const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
+  return indexText(document, text);
 }
 
 function parseJsonResponse(content) {
@@ -188,5 +191,6 @@ ${question}
 
 module.exports = {
   indexDocument,
+  indexText,
   answerQuestion,
 };

@@ -1,7 +1,7 @@
 const fs = require('fs/promises');
 const Document = require('../models/Document.model');
 const Analysis = require('../models/Analysis.model');
-const { indexDocument } = require('../services/rag.service');
+const { indexDocument, indexText } = require('../services/rag.service');
 const { extractPdfText } = require('../services/pdf.service');
 const { assessRisks } = require('../services/risk.service');
 const { deleteChunks } = require('../services/vector.service');
@@ -18,12 +18,9 @@ function levelFromScore(score) {
 function normalizeAnalysis(result) {
   const riskClauses = Array.isArray(result.risks) ? result.risks : [];
   const scores = riskClauses.map((risk) => Number(risk.score) || 0);
-
   const maxScore = scores.length ? Math.max(...scores) : 0;
   const avgScore = scores.length ? scores.reduce((sum, s) => sum + s, 0) / scores.length : 0;
-
   const riskScore = Math.min(100, Math.round(0.5 * maxScore + 0.5 * avgScore));
-
   return {
     summary: result.summary || '',
     riskScore,
@@ -47,11 +44,17 @@ async function uploadDocument(req, res) {
     status: 'processing',
   });
   try {
-    const chunkCount = await indexDocument(document);
+    const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
+
+    // Run vector indexing and legal risk assessment concurrently in parallel
+    const [chunkCount, result] = await Promise.all([
+      indexText(document, text),
+      assessRisks(text),
+    ]);
+
     document.status = 'ready';
     document.chunkCount = chunkCount;
     await document.save();
-    const result = await assessRisks(await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf'));
     await Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) });
   } catch (error) {
     document.status = 'failed';

@@ -50,40 +50,57 @@ async function callGemini({ systemInstruction, prompt }) {
   throw lastError;
 }
 
+async function callGroq({ systemInstruction, prompt }) {
+  const completion = await getGroq().chat.completions.create({
+    model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: systemInstruction,
+      },
+      {
+        role: "user",
+        content: prompt,
+      },
+    ],
+  });
+
+  const content = completion.choices[0]?.message?.content;
+
+  if (!content) {
+    throw new Error("Groq returned an empty response.");
+  }
+
+  return content;
+}
+
 async function generateJson({ systemInstruction, prompt }) {
+  const primaryProvider = process.env.LLM_PRIMARY_PROVIDER || (process.env.GROQ_API_KEY ? "groq" : "gemini");
+
+  if (primaryProvider === "groq" && process.env.GROQ_API_KEY) {
+    try {
+      const content = await callGroq({ systemInstruction, prompt });
+      return { content, provider: "groq" };
+    } catch (groqError) {
+      console.warn("Groq failed or rate-limited, falling back to Gemini:", groqError?.message || groqError);
+      try {
+        const content = await callGemini({ systemInstruction, prompt });
+        return { content, provider: "gemini" };
+      } catch (geminiError) {
+        throw new Error(`Both LLM providers failed: Groq (${groqError.message}), Gemini (${geminiError.message})`);
+      }
+    }
+  }
+
   try {
     const content = await callGemini({ systemInstruction, prompt });
     return { content, provider: "gemini" };
   } catch (geminiError) {
-    console.error("Gemini failed after retries, falling back to Groq:", geminiError);
-
-    const completion = await getGroq().chat.completions.create({
-      model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: systemInstruction,
-        },
-        {
-          role: "user",
-          content: prompt,
-        },
-      ],
-    });
-
-    const content = completion.choices[0]?.message?.content;
-
-    if (!content) {
-      throw new Error(
-        "Groq fallback returned an empty response after Gemini failed."
-      );
-    }
-
-    return {
-      content,
-      provider: "groq",
-    };
+    console.warn("Gemini failed, falling back to Groq:", geminiError?.message || geminiError);
+    if (!process.env.GROQ_API_KEY) throw geminiError;
+    const content = await callGroq({ systemInstruction, prompt });
+    return { content, provider: "groq" };
   }
 }
 
