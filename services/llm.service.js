@@ -75,8 +75,8 @@ async function callGroq({ systemInstruction, prompt }) {
   return content;
 }
 
-async function generateJson({ systemInstruction, prompt }) {
-  const primaryProvider = process.env.LLM_PRIMARY_PROVIDER || (process.env.GROQ_API_KEY ? "groq" : "gemini");
+async function generateJson({ systemInstruction, prompt, preferredProvider }) {
+  const primaryProvider = preferredProvider || process.env.LLM_PRIMARY_PROVIDER || "gemini";
 
   if (primaryProvider === "groq" && process.env.GROQ_API_KEY) {
     try {

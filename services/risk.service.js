@@ -83,8 +83,8 @@ Return ONLY valid JSON in the following format:
   "overallRiskLevel": "Very Low",
   "risks": [
     {
-      "clause": "",
-      "level": "low",
+      "clause": "Exact clause number and heading as written in the contract (e.g., '10. Non-Compete', '4.2 Limitation of Liability')",
+      "level": "low|medium|high|critical",
       "score": 0,
       "reason": "",
       "recommendation": ""
@@ -97,6 +97,7 @@ Rules:
 - Analyze the ENTIRE contract.
 - Do not ignore clauses because they appear near the end.
 - Report every risky clause you find.
+- Always include the exact clause number and title in the 'clause' field (e.g., '10. Non-Compete').
 - Classify severe one-sided clauses as High or Critical.
 - If there are no significant risks, return an empty risks array.
 - Return ONLY JSON.
@@ -107,6 +108,7 @@ Review the following contract carefully.
 
 ${text}
 `,
+    preferredProvider: "gemini",
   });
 
   let result;

@@ -150,7 +150,7 @@ Required format:
   "riskFlags": [
     {
       "level": "low|medium|high",
-      "clause": "",
+      "clause": "Exact clause number and heading as written in the contract (e.g., '10. Non-Compete')",
       "reason": "",
       "chunkIndex": 0
     }
@@ -168,6 +168,7 @@ Question:
 
 ${question}
 `,
+    preferredProvider: process.env.QA_LLM_PROVIDER || "groq",
   });
 
   const response = parseJsonResponse(content);
