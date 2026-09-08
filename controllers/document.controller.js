@@ -24,10 +24,22 @@ function normalizeAnalysis(result) {
       score: Math.min(100, Math.round((Number(r.score) || 0) * 10)),
     }));
   }
+
   const scores = riskClauses.map((risk) => Number(risk.score) || 0);
   const maxScore = scores.length ? Math.max(...scores) : 0;
   const avgScore = scores.length ? scores.reduce((sum, s) => sum + s, 0) / scores.length : 0;
-  const riskScore = Math.min(100, Math.round(0.5 * maxScore + 0.5 * avgScore));
+  const computedScore = scores.length ? Math.min(100, Math.round(0.5 * maxScore + 0.5 * avgScore)) : 0;
+
+  const aiScore = Number(result.overallRiskScore);
+  let riskScore;
+  if (Number.isFinite(aiScore) && aiScore > 0 && aiScore <= 100) {
+    riskScore = computedScore > 0 ? Math.round(0.6 * computedScore + 0.4 * aiScore) : aiScore;
+  } else if (computedScore > 0) {
+    riskScore = computedScore;
+  } else {
+    riskScore = 15;
+  }
+
   return {
     summary: result.summary || '',
     riskScore,
