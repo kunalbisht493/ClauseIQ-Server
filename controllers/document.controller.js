@@ -44,31 +44,25 @@ async function uploadDocument(req, res) {
     status: 'processing',
   });
 
-  // Respond immediately (< 500ms) so upload feels instantaneous and never times out
+  try {
+    const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
+
+    // Run vector indexing and legal risk assessment concurrently in parallel
+    const [chunkCount, result] = await Promise.all([
+      indexText(document, text),
+      assessRisks(text),
+    ]);
+
+    document.status = 'ready';
+    document.chunkCount = chunkCount;
+    await document.save();
+    await Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) });
+  } catch (error) {
+    document.status = 'failed';
+    document.error = error.message;
+    await document.save();
+  }
   res.status(201).json({ document });
-
-  // Process extraction, parallel vector indexing, and Gemini risk analysis in the background
-  (async () => {
-    try {
-      const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
-
-      // Run vector indexing and Gemini legal risk assessment concurrently in parallel
-      const [chunkCount, result] = await Promise.all([
-        indexText(document, text),
-        assessRisks(text),
-      ]);
-
-      document.status = 'ready';
-      document.chunkCount = chunkCount;
-      await document.save();
-      await Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) });
-    } catch (error) {
-      console.error('Background processing failed for document:', document._id, error);
-      document.status = 'failed';
-      document.error = error.message;
-      await document.save();
-    }
-  })();
 }
 
 async function listDocuments(req, res) {
