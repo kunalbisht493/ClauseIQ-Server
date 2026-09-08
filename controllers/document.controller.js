@@ -16,7 +16,14 @@ function levelFromScore(score) {
 }
 
 function normalizeAnalysis(result) {
-  const riskClauses = Array.isArray(result.risks) ? result.risks : [];
+  let riskClauses = Array.isArray(result.risks) ? result.risks : [];
+  const maxRaw = Math.max(...riskClauses.map((r) => Number(r.score) || 0), 0);
+  if (maxRaw > 0 && maxRaw <= 10) {
+    riskClauses = riskClauses.map((r) => ({
+      ...r,
+      score: Math.min(100, Math.round((Number(r.score) || 0) * 10)),
+    }));
+  }
   const scores = riskClauses.map((risk) => Number(risk.score) || 0);
   const maxScore = scores.length ? Math.max(...scores) : 0;
   const avgScore = scores.length ? scores.reduce((sum, s) => sum + s, 0) / scores.length : 0;

@@ -9,13 +9,24 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+const CANDIDATE_GEMINI_MODELS = [
+  "gemini-3.5-flash-lite",
+  "gemini-flash-lite-latest",
+  "gemini-3.5-flash",
+];
+
 async function callGemini({ systemInstruction, prompt }) {
+  const preferred = process.env.GEMINI_MODEL;
+  const models = preferred && preferred !== "gemini-3.5-flash"
+    ? [preferred, ...CANDIDATE_GEMINI_MODELS.filter((m) => m !== preferred)]
+    : CANDIDATE_GEMINI_MODELS;
+
   let lastError;
 
-  for (let attempt = 1; attempt <= MAX_GEMINI_ATTEMPTS; attempt++) {
+  for (const model of models) {
     try {
       const response = await getGemini().models.generateContent({
-        model: process.env.GEMINI_MODEL || "gemini-3.5-flash-lite",
+        model,
         contents: prompt,
         config: {
           systemInstruction,
@@ -28,22 +39,15 @@ async function callGemini({ systemInstruction, prompt }) {
           ? await response.text()
           : response.text;
 
-      if (!content || !content.trim()) {
-        throw new Error("Gemini returned an empty response");
+      if (content && content.trim()) {
+        return content;
       }
-
-      return content;
     } catch (error) {
       lastError = error;
-      const isRetryable = RETRYABLE_STATUSES.has(error?.status);
-
-      console.error(`Gemini attempt ${attempt}/${MAX_GEMINI_ATTEMPTS} failed:`, error);
-
-      if (!isRetryable || attempt === MAX_GEMINI_ATTEMPTS) {
-        throw lastError;
+      console.warn(`Gemini model ${model} unavailable (${error?.status || error.message}), falling back to next candidate...`);
+      if (error?.status !== 429 && error?.status !== 503 && error?.status !== 404) {
+        throw error;
       }
-
-      await sleep(RETRY_DELAY_MS * attempt);
     }
   }
 
@@ -52,7 +56,7 @@ async function callGemini({ systemInstruction, prompt }) {
 
 async function callGroq({ systemInstruction, prompt }) {
   const completion = await getGroq().chat.completions.create({
-    model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
+    model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
     response_format: { type: "json_object" },
     messages: [
       {
