@@ -56,7 +56,7 @@ async function callGemini({ systemInstruction, prompt }) {
 
 async function callGroq({ systemInstruction, prompt }) {
   const completion = await getGroq().chat.completions.create({
-    model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
+    model: process.env.GROQ_MODEL || "openai/gpt-oss-120b",
     response_format: { type: "json_object" },
     messages: [
       {
