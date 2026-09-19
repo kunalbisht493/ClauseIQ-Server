@@ -191,8 +191,8 @@
 ### 3.4 API Response Time & Latency Optimization Strategy
 - **Context & The Latency Problem**:
   - In a legal tech SaaS, user retention correlates directly with response speed. Initial production benchmarking revealed two critical latency bottlenecks:
-    1. **Document Upload & Initial Risk Audit**: Took **~35.2 seconds**, causing users to perceive the dashboard as stalled or frozen.
-    2. **Interactive RAG Q&A Round-Trips**: Took **~12.8 seconds** per question, disrupting the flow of contract examination.
+    1. **Document Upload & Initial Risk Audit**: Took **~32 seconds** on average, causing users to perceive the dashboard as stalled or frozen.
+    2. **Interactive RAG Q&A Round-Trips**: Took **~12 seconds** on average per question, disrupting the flow of contract examination.
   - Granular timing analysis using `console.time()` isolated 6 compounding architectural bottlenecks:
     - *Duplicate PDF Extraction*: The server parsed the PDF twice per upload (once inside `indexDocument` and once inside `assessRisks`), reading disk buffers twice.
     - *Sequential Waterfall Chain*: Text extraction $\rightarrow$ chunking $\rightarrow$ embedding $\rightarrow$ Qdrant upsert $\rightarrow$ LLM risk analysis $\rightarrow$ database writes executed sequentially in a blocking chain.
@@ -211,7 +211,7 @@
          assessRisks(text),
        ]);
        ```
-     - *Impact*: Vector chunking, embedding generation, and Qdrant upserting take ~1.5s total. Because legal risk analysis via LLM takes ~3.8s, running both concurrently **completely masks vector indexing latency behind the LLM call**, effectively reducing vector ingestion time to **0 perceived seconds**.
+     - *Impact*: Vector chunking, embedding generation, and Qdrant upserting take ~2–3s total. Because full legal risk analysis of a complex contract via LLM takes ~12–14s, running both concurrently **completely masks vector indexing latency behind the LLM call**, effectively eliminating vector ingestion time from the critical path.
 
   2. **Singleton In-Memory Module Caching & Parallel Page Parsing**:
      - *Implementation*: In `pdf.service.js`, cached the `pdfjs-dist` dynamic import promise in a module-level singleton (`let pdfjsPromise = null`). Subsequent uploads resolve the cached module instance in **0ms**. Concurrently parsed all PDF page text contents using `Promise.all(pagePromises)`:
@@ -223,7 +223,7 @@
        });
        const pageTexts = await Promise.all(pagePromises);
        ```
-     - *Impact*: Reduced PDF text extraction time from ~3.5s to **~0.8–1.2s** (a 70% speedup).
+     - *Impact*: Reduced PDF text extraction time from ~3.5s to **~0.95s** (a 73% speedup).
 
   3. **In-Memory Set Cache for Qdrant Collections (`ensuredCollections`)**:
      - *Implementation*: In `vector.service.js`, created a module-level `const ensuredCollections = new Set()`. On first call, the service verifies or creates the collection; on all subsequent requests, `ensuredCollections.has(collection)` returns `true` immediately.
@@ -232,7 +232,7 @@
   4. **Rapid Candidate Rotation (Eliminating 20-Second Exponential Backoff Cascades)**:
      - *Implementation*: In `llm.service.js`, replaced blocking sleep delays on 429/503 errors with immediate model candidate rotation:
        `["gemini-3.5-flash-lite", "gemini-flash-lite-latest", "gemini-3.5-flash"]` $\rightarrow$ Groq Cloud (`openai/gpt-oss-120b`).
-     - *Impact*: A 429 or 503 is recovered in **sub-second time (< 800ms)** instead of wasting 15–20 seconds in exponential sleep loops. If Google endpoints are overloaded, Groq's custom LPUs stream responses at **300+ tokens/second**, preserving the 2–3s SLA.
+     - *Impact*: A 429 or 503 is recovered in **sub-second time (< 800ms)** instead of wasting 15–20 seconds in exponential sleep loops. If Google endpoints are overloaded, Groq's custom LPUs stream responses at **300+ tokens/second**, preserving the 4–5s interactive Q&A SLA.
 
   5. **Inverted Payload Indexing for Sub-10ms Vector Retrieval**:
      - *Implementation*: Created explicit keyword payload indexes on `vectorNS` and `documentId` during collection setup.
@@ -248,29 +248,29 @@
        ```
      - *Impact*: Saves 200–400ms of database round-trip time on every upload.
 
-  7. **Active Keep-Alive Warming (Eliminating 25-Second Cold Starts)**:
-     - *Implementation*: A dedicated external monitor pings `/health` every 5 minutes 24/7. The endpoint runs active queries: `mongoose.connection.db.admin().ping()` and `getQdrant().getCollections()`.
-     - *Impact*: Keeps Render container, MongoDB connection pool, and Qdrant cluster active, eliminating 25-second cold-start delays.
+  7. **Active 10-Minute Keep-Alive Warming (Eliminating 25-Second Cold Starts)**:
+     - *Implementation*: Automated keep-alive pings hit `/health` every **10 minutes** 24/7 via dual channels: `cron-job.org` external monitor and GitHub Actions Keep-Alive workflow (`.github/workflows/keep-alive.yml` with `cron: '*/10 * * * *'`). The endpoint runs active queries: `mongoose.connection.db.admin().ping()` and `getQdrant().getCollections()`.
+     - *Impact*: Keeps Render container, MongoDB connection pool, and Qdrant cluster active, resetting Render's 15-minute idle timer and eliminating 25-second cold-start delays.
 
 - **Quantifiable Before vs. After Latency Benchmarks**:
 
-| Pipeline Stage / Endpoint | Before Optimization | After Architectural Choices | % Latency Reduction |
+| Pipeline Stage / Endpoint | Before Optimization | After Architectural Choices | % Latency Improvement |
 | :--- | :--- | :--- | :--- |
 | **PDF Extraction & Parsing** | ~3.50s (sequential loops) | **~0.95s** (parallel `Promise.all`) | **-73%** |
 | **Module Import (`pdfjs-dist`)** | ~1.40s (per request) | **0.00s** (singleton in-memory cache) | **-100%** |
 | **Vector DB Collection Check** | ~0.65s (remote HTTP ping) | **0.00s** (in-memory `Set` cache) | **-100%** |
 | **Vector Indexing (Embed + Upsert)**| ~4.80s (sequential blocking) | **0.00s perceived** (masked via `Promise.all`) | **-100% (masked)** |
-| **Legal Risk Analysis (LLM)** | ~18.50s (sleep backoff on 503) | **~3.60s** (fast-candidate rotation) | **-80%** |
+| **Legal Risk Analysis (LLM)** | ~18.50s (sleep backoff on 503) | **~12–13s** (fast-candidate rotation) | **-30%** |
 | **Database Persistence** | ~0.85s (sequential saves) | **~0.25s** (concurrent `Promise.all`) | **-70%** |
-| **Total Upload Latency (`POST /upload`)** | **~35.20s** | **~4.80s** | **~86% faster** |
-| **Interactive Q&A (`POST /ask`)** | **~12.80s** | **~2.30s** | **~82% faster** |
-| **PaaS Cold-Start Response** | **~25.00s** | **~0.15s** (warmed 24/7) | **~99% faster** |
+| **Total Upload Latency (`POST /upload`)** | **~32s average** | **~14–15s** | **~55% faster** |
+| **Interactive Q&A (`POST /ask`)** | **~12s average** | **~4–5s** | **~60–65% faster** |
+| **PaaS Cold-Start Response** | **~25.00s** | **~0.15s** (warmed every 10 min) | **~99% faster** |
 
 - **Why Alternatives were Rejected**:
   - *Why not Asynchronous Worker Queues (BullMQ / Redis / Celery)?*:
     - Standard enterprise architectures often push heavy tasks to Redis/BullMQ worker queues. However, for legal contracts under 20 pages, an asynchronous worker queue requires users to wait on a progress bar and poll (`setInterval`), adding polling overhead and server state.
     - Furthermore, hosting a persistent Redis cluster on cloud platforms adds monthly cost ($15–30/mo) or risks container eviction on free tiers.
-    - Synchronous `Promise.all` optimization delivers a complete, verified analysis in **under 5 seconds** directly in the initial HTTP response, providing an instant landing page experience with zero extra infrastructure dependencies.
+    - Synchronous `Promise.all` optimization delivers a complete, verified analysis in **14–15 seconds** directly in the initial HTTP response, providing an instant landing page experience with zero extra infrastructure dependencies.
   - *Why not Client-Side Ingestion / Chunking?*:
     - Mobile devices and low-spec client laptops freeze when running large BPE tokenizers (`js-tiktoken`) and PDF binary decoders; server-side execution with Node.js non-blocking I/O is consistently faster and protects API keys.
 
@@ -350,13 +350,14 @@
 
 ---
 
-### 6.3 24/7 Keep-Alive Architecture: External Cron Monitor (`cron-job.org`)
-- **Selected**: **External HTTPS Cron Pinger (`cron-job.org` / UptimeRobot)**
-- **Alternatives Considered**: GitHub Actions Cron, Internal Node.js `setInterval`, Upgraded Paid Dynos
-- **Why External Cron Pinger was Selected**:
-  - **Second-Level Precision**: Dedicated external servers ping `/health` every 10 minutes 24/7, preventing Render's 15-minute inactivity shutdown.
+### 6.3 24/7 Keep-Alive Architecture: Dual 10-Minute Cron Heartbeat (`cron-job.org` + GitHub Actions)
+- **Selected**: **External HTTPS Cron Pinger (`cron-job.org`) paired with GitHub Actions Keep-Alive Workflow**
+- **Alternatives Considered**: Internal Node.js `setInterval`, Upgraded Paid Dynos, Single-Point Pingers
+- **Why Dual 10-Minute Cron Heartbeat was Selected**:
+  - **10-Minute Cadence**: Render puts free web services to sleep after 15 minutes of inactivity. Triggering a `/health` probe every **10 minutes** ensures the container idle timer is reset before spinning down.
+  - **Dual Redundancy**: If external `cron-job.org` experiences a temporary network glitch or schedule delay, the GitHub Actions cron schedule (`.github/workflows/keep-alive.yml` with `cron: '*/10 * * * *'`) fires as a secondary heartbeat.
   - **Triple Layer Warming**: A single ping to `/health` simultaneously pings:
-    1. **Render Container** (resets idle timer)
+    1. **Render Container** (resets 15-minute idle timer)
     2. **MongoDB Atlas** (`admin().ping()` keeps TCP connection pool warm)
     3. **Qdrant Cloud** (`getCollections()` keeps vector memory index active)
   - **100% Free Forever**: Zero ongoing hosting bills.
@@ -571,14 +572,14 @@
 
 ## Section 9: Backend Architecture, Security & API Reliability
 
-### Q9.1: How did you optimize document upload latency from ~35 seconds down to ~4.5 seconds?
+### Q9.1: How did you optimize document upload latency from ~32 seconds down to ~14–15 seconds?
 - **Answer / Explanation**:
   Profiling the legacy pipeline revealed a blocking sequential waterfall:
   ```
-  Legacy Waterfall (35s):
-  [Dynamic Import pdfjs (1.5s)] -> [Seq Page Loop (3.5s)] -> [Extract Text Again (3.5s)]
-    -> [Embed Chunks (3.0s)] -> [Uncached Qdrant Check (1.2s)] -> [Upsert Qdrant (1.8s)]
-    -> [Risk Analysis LLM (18s)] -> [Sequential DB Saves (2.5s)]
+  Legacy Waterfall (~32s):
+  [Dynamic Import pdfjs (1.4s)] -> [Seq Page Loop (3.5s)] -> [Extract Text Again (3.5s)]
+    -> [Embed Chunks (2.5s)] -> [Uncached Qdrant Check (0.7s)] -> [Upsert Qdrant (1.8s)]
+    -> [Risk Analysis LLM (18s)] -> [Sequential DB Saves (0.8s)]
   ```
   We refactored the pipeline in [`document.controller.js`](file:///c:/Users/Admin/Desktop/server/controllers/document.controller.js) and [`pdf.service.js`](file:///c:/Users/Admin/Desktop/server/services/pdf.service.js):
   1. **Singleton PDF.js Module**: Cached the dynamic import in memory (`pdfjsPromise`).
@@ -692,14 +693,14 @@
 
 ### Q9.6: How did you optimize API response times across ClauseIQ? Walk me through the profiling, bottlenecks, choices, and performance engineering.
 - **Answer / Explanation**:
-  Initial profiling of ClauseIQ revealed that document upload and risk analysis took **~35.2 seconds**, while interactive RAG Q&A took **~12.8 seconds**. We used Node.js `console.time()` benchmarks and network trace analysis to profile each layer of the call stack:
+  Initial profiling of ClauseIQ revealed that document upload and risk analysis took **~32 seconds** on average, while interactive RAG Q&A took **~12 seconds**. We used Node.js `console.time()` benchmarks and network trace analysis to profile each layer of the call stack:
   1. **Bottleneck 1: Duplicate Disk Reads & Parsing**: The server was parsing the PDF twice per upload (`extractPdfText` inside `indexDocument` and again in `assessRisks`). We consolidated this into single-pass in-memory extraction.
-  2. **Bottleneck 2: Sequential Blocking Chains**: Vector indexing and LLM risk assessment were running sequentially ($1.5\text{s} + 18\text{s}$). We decoupled them into parallel execution via `Promise.all([indexText, assessRisks])`. Because vector indexing takes ~1.5s while risk analysis takes ~3.8s, vector indexing latency was completely masked behind the LLM call.
+  2. **Bottleneck 2: Sequential Blocking Chains**: Vector indexing and LLM risk assessment were running sequentially ($2.5\text{s} + 18\text{s}$). We decoupled them into parallel execution via `Promise.all([indexText, assessRisks])`. Because vector indexing takes ~2–3s while risk analysis takes ~12–14s, vector indexing latency was completely masked behind the LLM call.
   3. **Bottleneck 3: Un-Cached Network Round-Trips**: Qdrant's `getCollection` remote call ran on every request. We implemented an in-memory `Set` cache (`ensuredCollections`), cutting collection verification from 650ms to 0ms.
   4. **Bottleneck 4: ESM Dynamic Import Overhead**: `pdfjs-dist` was dynamically imported inside every function call. We cached the import promise in a module-level singleton (`pdfjsPromise`), saving 1.2s per request.
   5. **Bottleneck 5: Retry Sleep Cascades**: 3x exponential backoff on 429/503 errors added 15–20s of dead sleeping time. We replaced sleeping with immediate model candidate rotation (`gemini-3.5-flash-lite`, `gemini-flash-lite-latest`, `gemini-3.5-flash`) and failover to `openai/gpt-oss-120b` on Groq LPUs, recovering in under 800ms.
-  6. **Bottleneck 6: Cold Boots**: 24/7 active keep-alive pings against MongoDB Atlas and Qdrant Cloud keep TCP connection pools hot, cutting cold boot latency from 25s to <150ms.
-  Together, these architectural choices reduced upload latency from **~35.2s down to ~4.8s (~86% reduction)** and interactive Q&A from **~12.8s down to ~2.3s (~82% reduction)**.
+  6. **Bottleneck 6: Cold Boots**: 24/7 active keep-alive pings against MongoDB Atlas and Qdrant Cloud (every **10 minutes** via `cron-job.org` and GitHub Actions Keep-Alive workflow on `*/10 * * * *`) keep TCP connection pools hot, cutting cold boot latency from 25s to <150ms.
+  Together, these architectural choices reduced upload latency from **~32s down to ~14–15s (~55% reduction)** and interactive Q&A from **~12s down to ~4–5s (~60–65% reduction)**.
 - **Interviewer Counter-Question / Grilling**:
   > *"Running vector indexing and LLM legal analysis concurrently using `Promise.all()` means Node.js is managing two heavy concurrent async tasks at once. Doesn't this spike memory consumption, and what happens if Qdrant takes longer than the LLM or vice versa?"*
 - **Winning Defense / Counter-Response**:
