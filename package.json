@@ -1,6 +1,9 @@
 {
   "name": "server",
   "version": "1.0.0",
+  "engines": {
+    "node": "24.x"
+  },
   "description": "Secure API for PDF contract analysis and question answering.",
   "main": "server.js",
   "scripts": {
