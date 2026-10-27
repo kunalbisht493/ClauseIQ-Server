@@ -2,7 +2,7 @@
   "name": "server",
   "version": "1.0.0",
   "engines": {
-    "node": "24.x"
+    "node": "24.22.1"
   },
   "description": "Secure API for PDF contract analysis and question answering.",
   "main": "server.js",
@@ -30,7 +30,7 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.4",
     "multer": "^2.0.1",
-    "nodemailer": "^9.0.3",
+    "nodemailer": "^10.2.1",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
     "pdfjs-dist": "^6.2.108",
