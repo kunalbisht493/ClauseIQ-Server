@@ -916,4 +916,84 @@
 
 ---
 
+
+### Q10.5: How do you stream LLM answers using Server-Sent Events (SSE) in a React application without third-party streaming libraries?
+- **Answer / Explanation**:
+  In [`src/services/document.service.js`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/services/document.service.js) and [`src/pages/AnalysisPage.jsx`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/pages/AnalysisPage.jsx):
+  - **Why not `EventSource`?**: The standard browser `EventSource` API is strictly limited to HTTP `GET` requests. It cannot send a JSON request body or custom Authorization headers without leaking tokens into query parameters.
+  - **Native `fetch` with `ReadableStream`**: We implement SSE using modern standard `fetch` with `method: 'POST'`, sending the question in the request body along with JWT credentials.
+  - **Stream Decoding & Frame Demuxing**:
+    ```javascript
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true }).replace(/\r\n/g, '\n');
+      let boundary;
+      while ((boundary = buffer.indexOf('\n\n')) !== -1) {
+        const block = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        handle(block);
+      }
+    }
+    ```
+  - Dispatches citations via `onSources(sources)` as soon as the initial metadata arrives, appends incremental words via `onToken(text)`, and resolves with the final structured `qaEntry`.
+- **Interviewer Counter-Question / Grilling**:
+  > *"What happens if a TCP packet arrives fragmented in the middle of a token or JSON event line?"*
+- **Winning Defense / Counter-Response**:
+  > *"The reader maintains an internal string `buffer`. It splits strictly on `\n\n` SSE event boundaries.
+  > If a packet cuts off in the middle of a line (e.g. `data: {"text": "par`), `buffer.indexOf('\n\n')` returns `-1`.
+  > The while loop does not execute; the partial fragment remains in the buffer.
+  > When the subsequent chunk arrives with the remainder of the packet, it concatenates to the buffer and completes the frame, guaranteeing 100% parse safety without external libraries."*
+
+---
+
+### Q10.6: How do you resolve the state race condition between periodic background status polling and optimistic client-side streaming state?
+- **Answer / Explanation**:
+  In [`src/pages/AnalysisPage.jsx`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/pages/AnalysisPage.jsx):
+  - **The Race Condition**: In our asynchronous pipeline, `AnalysisPage` polls `getDocument(id)` every 2.5 seconds to track background risk analysis progression (`processing` $\rightarrow$ `indexed` $\rightarrow$ `ready`).
+  - While the document is in status `indexed`, the user can submit a question. The question streams in, and the client optimistically updates local state.
+  - However, the server saves the `Analysis` document in MongoDB asynchronously a moment *after* the stream finishes. If a background poll resolves during that 100–200ms database write window, a naive `setData(res)` would overwrite local state with the slightly older server snapshot, causing the user's freshly answered question to disappear from the screen.
+  - **Local History Reconciliation Guard**:
+    ```javascript
+    setData((prev) => {
+      const serverHistory = res.analysis?.qaHistory || [];
+      const localHistory = prev?.analysis?.qaHistory || [];
+      const qaHistory = localHistory.length > serverHistory.length ? localHistory : serverHistory;
+      if (!qaHistory.length) return res;
+      return { ...res, analysis: { ...(res.analysis || {}), qaHistory } };
+    });
+    ```
+- **Interviewer Counter-Question / Grilling**:
+  > *"What happens if two tabs ask questions at the same time? Won't comparing array lengths lose a question from another tab?"*
+- **Winning Defense / Counter-Response**:
+  > *"Contract audit is predominantly single-seat analytical work. Even in an edge case where two tabs submit inquiries simultaneously:
+  > 1. The array length check acts as a temporary 2-second protective bridge while local streaming completes.
+  > 2. Once the server writes the second entry to MongoDB, the subsequent 2.5-second poll returns the updated server snapshot where `serverHistory.length >= localHistory.length`.
+  > 3. The guard gracefully yields, synchronizing all tabs to the complete canonical history without race-condition flicker."*
+
+---
+
+### Q10.7: Why must HTTP retry interceptors differentiate between idempotent (GET/HEAD) and non-idempotent (POST/PUT/DELETE) requests in AI applications?
+- **Answer / Explanation**:
+  In [`src/services/api.js`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/services/api.js):
+  - Cloud hosting services (Render, Railway, Heroku) sleep inactive containers. The initial request wakes the service, returning `502 Bad Gateway` or `503 Service Unavailable` for 15–20 seconds.
+  - While auto-retrying read queries (`GET`) is completely safe, **retrying a `POST` or `DELETE` is dangerous**:
+    - If a PDF upload was received by the server but the network socket hung right at the end of the upload, retrying the `POST` could initiate a second parallel ingestion job, duplicating data and doubling LLM token expenses.
+  - **Strict Idempotency Guard**:
+    ```javascript
+    const method = String(options.method || 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'HEAD') retries = 0;
+    ```
+- **Interviewer Counter-Question / Grilling**:
+  > *"If an upload fails on a 502 cold-start, shouldn't the user be protected?"*
+- **Winning Defense / Counter-Response**:
+  > *"If the reverse proxy returned 502, the request never reached the application layer. But the browser client cannot distinguish between a pre-gateway failure and an in-flight socket drop.
+  > By failing fast on non-idempotent operations, we surface clear feedback to the UI.
+  > Furthermore, our backend SHA-256 deduplication guarantees that even if a user manually clicks 'Upload' again, the server detects the duplicate hash and returns the existing document in <20ms, combining client-side discipline with backend cryptographic idempotency."*
+
+---
+
 *Authored for ClauseIQ Technical Architectural Review & Engineering Evaluation.*

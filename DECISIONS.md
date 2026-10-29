@@ -329,5 +329,62 @@ Store signed JWTs in **HttpOnly, SameSite=Lax cookies** with an optional Bearer 
 
 ---
 
-*Authored for ClauseIQ System Architecture & Technical Interview Mastery.*
 
+## ADR-015: Native Fetch-Based Server-Sent Events (SSE) Client Streaming
+
+### Status: Accepted & Implemented
+- **Location**: [`src/services/document.service.js`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/services/document.service.js)
+
+### Context & Problem:
+The browser's native `EventSource` API is restricted exclusively to HTTP `GET` requests and cannot send JSON payloads in the request body or custom Authorization headers. Third-party streaming libraries add bundle bloat.
+
+### Decision:
+Implement an SSE consumer using native `fetch` with `ReadableStream` and `TextDecoder`:
+- Sends `POST` request with `Accept: text/event-stream` and JSON question body.
+- Chunks are decoded with `TextDecoder({ stream: true })` and parsed on `\n\n` event boundaries.
+- Emits citations via `onSources` and live tokens via `onToken`.
+- Features an automatic fallback to `askQuestion()` if connected to an older backend lacking the stream route.
+
+### Consequences & Trade-offs:
+- **Positive**: 0 kB external bundle footprint; full support for HTTP `POST`, auth cookies, and headers.
+- **Negative**: Requires custom frame buffering (~30 lines of code).
+
+---
+
+## ADR-016: State Reconciliation Guard Between Polling and Optimistic Streaming
+
+### Status: Accepted & Implemented
+- **Location**: [`src/pages/AnalysisPage.jsx`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/pages/AnalysisPage.jsx)
+
+### Context & Problem:
+During document analysis, `AnalysisPage` polls `getDocument` every 2.5s. When a user streams an answer, the answer is appended optimistically. If a background poll resolves before the server finishes persisting the new QA entry to MongoDB, naive state updates overwrite local state, temporarily wiping the active question from view.
+
+### Decision:
+Implement a history reconciliation guard in `setData`:
+`const qaHistory = localHistory.length > serverHistory.length ? localHistory : serverHistory;`
+
+### Consequences & Trade-offs:
+- **Positive**: Eliminates UI flicker and protects optimistic streaming entries from being wiped out by lagging polling responses.
+- **Negative**: Polling is slightly delayed in picking up concurrent external updates until local streaming completes.
+
+---
+
+## ADR-017: Strict Idempotent-Only Cold-Start Retry Policy
+
+### Status: Accepted & Implemented
+- **Location**: [`src/services/api.js`](file:///c:/Users/Admin/Desktop/ClauseIQ-Client/src/services/api.js)
+
+### Context & Problem:
+Auto-retrying network requests during PaaS cold-starts (502/503/504) is essential for UX. However, retrying non-idempotent HTTP methods (`POST`, `PUT`, `DELETE`) risks re-uploading files, creating duplicate documents, and burning double LLM compute tokens.
+
+### Decision:
+Restrict network cold-start auto-retries exclusively to `GET` and `HEAD` methods:
+`if (method !== 'GET' && method !== 'HEAD') retries = 0;`
+
+### Consequences & Trade-offs:
+- **Positive**: Prevents duplicate uploads and duplicate API billing.
+- **Negative**: A cold-start on an upload fails immediately to the UI; handled cleanly by user-facing retry actions and backend SHA-256 deduplication.
+
+---
+
+*Authored for ClauseIQ System Architecture & Technical Interview Mastery.*
