@@ -1,44 +1,18 @@
 const { getGemini } = require('../config/gemini');
 
-const BATCH_SIZE = Number(process.env.EMBED_BATCH_SIZE || 20);
-const MAX_CONCURRENCY = Number(process.env.EMBED_CONCURRENCY || 1);
+const BATCH_SIZE = 100;
+const MAX_CONCURRENCY = Number(process.env.EMBED_CONCURRENCY || 4);
 
-function isRateLimitError(err) {
-  if (!err) return false;
-  if (err.status === 429 || err.code === 429 || err.status === 'RESOURCE_EXHAUSTED') return true;
-  const msg = err.message || (typeof err === 'string' ? err : '');
-  return msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('Quota exceeded');
-}
-
-function getRetryDelayMs(err, fallbackMs = 45000) {
-  const msg = err?.message || (typeof err === 'string' ? err : '');
-  const match = msg.match(/retry in ([0-9.]+)s/i) || msg.match(/retryDelay.*?(\d+)s/i);
-  if (match) {
-    return (Math.ceil(parseFloat(match[1])) + 3) * 1000;
+async function embedBatch(batch, outputDimensionality, taskType) {
+  const response = await getGemini().models.embedContent({
+    model: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
+    contents: batch,
+    config: { outputDimensionality, ...(taskType ? { taskType } : {}) },
+  });
+  if (!Array.isArray(response.embeddings) || response.embeddings.length !== batch.length) {
+    throw new Error('Gemini returned an unexpected number of embeddings');
   }
-  return fallbackMs;
-}
-
-async function embedBatch(batch, outputDimensionality, taskType, retries = 5) {
-  try {
-    const response = await getGemini().models.embedContent({
-      model: process.env.GEMINI_EMBEDDING_MODEL || 'gemini-embedding-001',
-      contents: batch,
-      config: { outputDimensionality, ...(taskType ? { taskType } : {}) },
-    });
-    if (!Array.isArray(response.embeddings) || response.embeddings.length !== batch.length) {
-      throw new Error('Gemini returned an unexpected number of embeddings');
-    }
-    return response.embeddings.map((item) => item.values);
-  } catch (error) {
-    if (isRateLimitError(error) && retries > 0) {
-      const waitMs = getRetryDelayMs(error, 45000);
-      console.warn(`Gemini embedding rate-limited. Pausing ${Math.round(waitMs / 1000)}s for quota replenishment... (Retries left: ${retries})`);
-      await new Promise((r) => setTimeout(r, waitMs));
-      return embedBatch(batch, outputDimensionality, taskType, retries - 1);
-    }
-    throw error;
-  }
+  return response.embeddings.map((item) => item.values);
 }
 
 async function embedTexts(input, taskType) {
