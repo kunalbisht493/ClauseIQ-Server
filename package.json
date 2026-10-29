@@ -9,7 +9,8 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "benchmark": "node run-benchmark.js"
   },
   "keywords": [],
   "author": "",
