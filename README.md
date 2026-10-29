@@ -157,12 +157,13 @@ QDRANT_COLLECTION=legal_document_chunks
 ### Documents & Analysis (`/api/documents` & `/api/analyses`)
 | Method | Endpoint | Auth | Description |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/documents/upload` | User | Upload PDF contract, parse text, generate vectors, and queue analysis |
+| `POST` | `/api/documents` | User | Upload a PDF. Returns **202** immediately with `status: "processing"`; parsing, embedding and risk analysis run in the background. Re-uploading identical bytes returns the existing document (**200**, `duplicate: true`) |
 | `GET` | `/api/documents` | User | List all uploaded documents for current user |
-| `GET` | `/api/documents/:id` | User | Get document status and metadata |
+| `GET` | `/api/documents/:id` | User | Poll for status: `processing` → `indexed` (Q&A already works) → `ready` (risk analysis stored), or `failed` |
 | `DELETE`| `/api/documents/:id` | User | Delete document, MongoDB records, and Qdrant vector chunks |
 | `GET` | `/api/analyses/:documentId` | User | Retrieve risk analysis and full Q&A history |
-| `POST` | `/api/analyses/:documentId/qa` | User | Ask a clause-specific question (RAG + Jina reranking) |
+| `POST` | `/api/analyses/:documentId/questions` | User | Ask a question (RAG). Returns `{ answer, riskFlags, sources, qaEntry }` |
+| `POST` | `/api/analyses/:documentId/questions/stream` | User | Same as above, as Server-Sent Events: `sources` → `token`* → `done` (or `error`) |
 
 ---
 

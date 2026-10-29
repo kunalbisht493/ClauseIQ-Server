@@ -37,9 +37,12 @@ async function upsertChunks(vectorNS, documentId, chunks, vectors) {
     vector: vectors[index],
     payload: { vectorNS, documentId: String(documentId), text, chunkIndex: index },
   }));
+  // Upload batches concurrently; each batch is independent.
+  const uploads = [];
   for (let start = 0; start < records.length; start += 100) {
-    await client.upsert(collection, { wait: false, points: records.slice(start, start + 100) });
+    uploads.push(client.upsert(collection, { wait: false, points: records.slice(start, start + 100) }));
   }
+  await Promise.all(uploads);
 }
 
 async function search(vectorNS, documentId, vector, topK = 5) {

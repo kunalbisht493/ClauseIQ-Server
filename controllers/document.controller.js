@@ -1,4 +1,6 @@
 const fs = require('fs/promises');
+const { createReadStream } = require('fs');
+const crypto = require('crypto');
 const Document = require('../models/Document.model');
 const Analysis = require('../models/Analysis.model');
 const { indexDocument, indexText } = require('../services/rag.service');
@@ -48,8 +50,93 @@ function normalizeAnalysis(result) {
   };
 }
 
+// A job that hasn't progressed for this long is considered dead (e.g. the server restarted
+// mid-processing), so the UI doesn't spin forever.
+const STALE_PROCESSING_MS = Number(process.env.STALE_PROCESSING_MS || 10 * 60 * 1000);
+const IN_FLIGHT = ['processing', 'indexed'];
+
+function hashFile(filePath) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    createReadStream(filePath)
+      .on('error', reject)
+      .on('data', (chunk) => hash.update(chunk))
+      .on('end', () => resolve(hash.digest('hex')));
+  });
+}
+
+async function markStale(document) {
+  if (
+    document &&
+    IN_FLIGHT.includes(document.status) &&
+    Date.now() - new Date(document.updatedAt).getTime() > STALE_PROCESSING_MS
+  ) {
+    document.status = 'failed';
+    document.error = 'Processing was interrupted. Please upload the document again.';
+    await document.save();
+  }
+  return document;
+}
+
+// Runs in the background after the HTTP response has been sent.
+//   processing -> indexed (Q&A usable) -> ready (risk analysis stored)
+async function processDocument(document) {
+  try {
+    const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
+
+    // Start the long LLM risk call immediately; index vectors while it runs.
+    const riskPromise = assessRisks(text);
+    riskPromise.catch(() => {}); // failure is handled below; avoids an unhandled rejection meanwhile
+
+    const chunkCount = await indexText(document, text);
+    document.chunkCount = chunkCount;
+    document.status = 'indexed'; // the user can already ask questions
+    await document.save();
+
+    const result = await riskPromise;
+
+    // The user may have deleted the document while we were working.
+    if (!(await Document.exists({ _id: document._id }))) {
+      await deleteChunks(document.vectorNS, document._id).catch(() => {});
+      return;
+    }
+
+    // Upsert (not create): the user may have asked questions already, which creates the Analysis doc.
+    await Analysis.findOneAndUpdate(
+      { documentId: document._id },
+      { $set: normalizeAnalysis(result) },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    document.status = 'ready';
+    await document.save();
+  } catch (error) {
+    console.error('Document processing failed for', document._id, error);
+    try {
+      document.status = 'failed';
+      document.error = error.message;
+      await document.save();
+    } catch (saveError) {
+      console.error('Could not record failure for document', document._id, saveError.message);
+    }
+  }
+}
+
 async function uploadDocument(req, res) {
   if (!req.file) return res.status(400).json({ message: 'A PDF file is required' });
+
+  // Same user + same bytes => reuse the existing result instead of paying for the pipeline again.
+  // This also makes client retries of a slow upload harmless.
+  const fileHash = await hashFile(req.file.path);
+  const existing = await Document.findOne({
+    userId: req.user.id,
+    fileHash,
+    status: { $in: ['processing', 'indexed', 'ready'] },
+  });
+  if (existing) {
+    await fs.unlink(req.file.path).catch(() => {});
+    return res.status(200).json({ document: existing, duplicate: true });
+  }
+
   const documentId = new mongoose.Types.ObjectId();
   const document = await Document.create({
     _id: documentId,
@@ -60,30 +147,23 @@ async function uploadDocument(req, res) {
     vectorNS: 'document-' + documentId,
     mimeType: req.file.mimetype,
     size: req.file.size,
+    fileHash,
     status: 'processing',
   });
 
-  try {
-    const text = await extractPdfText(document.fileUrl, document.mimeType || 'application/pdf');
+  // Respond immediately; the client polls GET /documents/:id until status is indexed/ready.
+  res.status(202).json({ document });
+  setImmediate(() => processDocument(document));
+}
 
-    // Run vector indexing and legal risk assessment concurrently in parallel
-    const [chunkCount, result] = await Promise.all([
-      indexText(document, text),
-      assessRisks(text),
-    ]);
-
-    document.status = 'ready';
-    document.chunkCount = chunkCount;
-    await Promise.all([
-      document.save(),
-      Analysis.create({ documentId: document._id, ...normalizeAnalysis(result) }),
-    ]);
-  } catch (error) {
-    document.status = 'failed';
-    document.error = error.message;
-    await document.save();
-  }
-  res.status(201).json({ document });
+/** Mark documents left in-flight by a previous process as failed. Call once at startup. */
+async function failInterruptedDocuments() {
+  const cutoff = new Date(Date.now() - STALE_PROCESSING_MS);
+  const result = await Document.updateMany(
+    { status: { $in: IN_FLIGHT }, updatedAt: { $lt: cutoff } },
+    { $set: { status: 'failed', error: 'Processing was interrupted. Please upload the document again.' } },
+  );
+  return result.modifiedCount || 0;
 }
 
 async function listDocuments(req, res) {
@@ -92,7 +172,7 @@ async function listDocuments(req, res) {
 }
 
 async function getDocument(req, res) {
-  const document = await Document.findOne({ _id: req.params.documentId, userId: req.user.id });
+  const document = await markStale(await Document.findOne({ _id: req.params.documentId, userId: req.user.id }));
   if (!document) return res.status(404).json({ message: 'Document not found' });
   const analysis = await Analysis.findOne({ documentId: document._id });
   res.json({ document, analysis });
@@ -123,4 +203,4 @@ async function deleteDocument(req, res) {
   res.json({ message: 'Document deleted successfully' });
 }
 
-module.exports = { uploadDocument, listDocuments, getDocument, deleteDocument };
+module.exports = { uploadDocument, listDocuments, getDocument, deleteDocument, processDocument, failInterruptedDocuments };

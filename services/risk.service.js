@@ -109,6 +109,12 @@ Review the following contract carefully.
 ${text}
 `,
     preferredProvider: "gemini",
+    // A whole-contract analysis legitimately takes longer than a Q&A call.
+    timeoutMs: Number(process.env.LLM_RISK_TIMEOUT_MS || 60_000),
+    generation: {
+      thinkingBudget: process.env.RISK_THINKING_BUDGET,
+      maxOutputTokens: process.env.RISK_MAX_OUTPUT_TOKENS,
+    },
   });
 
   let result;

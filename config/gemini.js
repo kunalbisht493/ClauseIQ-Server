@@ -1,8 +1,13 @@
 const { GoogleGenAI } = require('@google/genai');
 
+// Reuse one client per API key instead of constructing a new one on every call.
+let cached = { key: null, client: null };
+
 function getGemini() {
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY is required for Gemini operations');
-  return new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY is required for Gemini operations');
+  if (cached.key !== key) cached = { key, client: new GoogleGenAI({ apiKey: key }) };
+  return cached.client;
 }
 
 module.exports = { getGemini };
