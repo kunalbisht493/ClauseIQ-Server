@@ -12,7 +12,14 @@ async function indexText(document, text) {
     throw new Error("No readable text found in the PDF");
   }
 
-  const embeddings = await embedTexts(chunks, "RETRIEVAL_DOCUMENT");
+  const onQuotaWait = async (waitSec) => {
+    if (document && typeof document.save === 'function') {
+      document.rateLimitWaitSec = Number(((document.rateLimitWaitSec || 0) + waitSec).toFixed(2));
+      await document.save().catch(() => { });
+    }
+  };
+
+  const embeddings = await embedTexts(chunks, "RETRIEVAL_DOCUMENT", onQuotaWait);
 
   await upsertChunks(
     document.vectorNS,
@@ -116,11 +123,11 @@ function buildPrompt(sources, knownRisks, question) {
   const risks = selectKnownRisks(knownRisks);
   const knownRisksBlock = risks.length
     ? `\n\nKnown risk flags already identified in this document by a prior full-document review (always consider these, even if not directly retrieved above; mention any that are relevant to the question, especially if they conflict with the retrieved excerpts):\n\n${risks
-        .map(
-          (risk, i) =>
-            `${i + 1}. [${risk.level || "unknown"}] ${risk.clause || ""} — ${risk.reason || ""}`
-        )
-        .join("\n")}`
+      .map(
+        (risk, i) =>
+          `${i + 1}. [${risk.level || "unknown"}] ${risk.clause || ""} — ${risk.reason || ""}`
+      )
+      .join("\n")}`
     : "";
 
   return `

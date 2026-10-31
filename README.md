@@ -14,6 +14,7 @@
 - [Health Check & 24/7 Keep-Alive](#-health-check--247-keep-alive)
 - [Getting Started](#-getting-started)
 - [Testing](#-testing)
+- [Performance Benchmark](#-performance-benchmark)
 - [Production Deployment (Render)](#-production-deployment-render)
 
 ---
@@ -38,7 +39,7 @@ ClauseIQ Backend is a high-performance, secure Node.js & Express API designed to
 - **Email Delivery**:
   - **Primary (Cloud/Render)**: Resend HTTP REST API (Port 443 HTTPS)
   - **Fallback (Local)**: Nodemailer (Port 465 direct SSL)
-- **Security**: Helmet, `express-rate-limit`, `bcryptjs`, dynamic multi-origin CORS
+  - **Security**: Helmet, `express-rate-limit`, `bcryptjs`, dynamic multi-origin CORS
 
 ---
 
@@ -211,10 +212,141 @@ The backend includes a comprehensive Jest test suite verifying:
 - RAG pipeline & vector search (`tests/rag.service.test.js`)
 - Risk analysis prompts & categorization (`tests/risk.service.test.js`)
 - Email delivery & 5-minute token expiry (`tests/email.service.test.js`)
+- Benchmark calculation & monotonic timing logic (`tests/benchmark-calculation.test.js`)
 
 ```bash
 npm test
 ```
+
+---
+
+## 📊 Performance Benchmark
+
+ClauseIQ includes an automated performance benchmark suite ([`run-benchmark.js`](run-benchmark.js)) and modular calculation engine ([`benchmark-calculation.js`](benchmark-calculation.js)) designed to measure end-to-end processing and streaming Q&A performance across real commercial legal contracts from the **CUAD (Contract Understanding Atticus Dataset)**.
+
+### 1. Two Strictly Independent Timers
+
+To ensure clean, unpolluted data, the benchmark records two **completely independent** timers using monotonic clocks (`performance.now()`):
+
+```
+[Contract Upload Initiated] ─────── TIMER 1 (Document Processing) ───────► [Status: 'ready' Stored]
+                                                                                  │
+                                                                       Document is fully ready
+                                                                                  │
+[Question Submitted to SSE] ──────── TIMER 2 (Independent Q&A) ──────────► [Stream Parse Complete]
+```
+
+- **Timer 1: Document Processing Time (`documentProcessingTimeSec`)**:
+  - **Start Point**: Monotonic timestamp when the multipart upload request (`POST /api/documents`) begins.
+  - **End Point**: Monotonic timestamp when the client/poller detects `document.status === 'ready'` (meaning native/OCR text extraction, chunking, 768-dim Gemini vector embedding, Qdrant upserts, and LLM risk analysis scoring are fully written to MongoDB).
+  - **Independence Rule**: Measures only ingestion and risk audit. Q&A execution is never included.
+
+- **Timer 2: Complete Q&A Response Time (`qnaResponseTimeSec`)**:
+  - **Start Point**: A **brand new monotonic timer** initiated *strictly after* the document has completed processing and reached `'ready'`, at the exact moment the predefined question is sent to `POST /api/analyses/:id/questions/stream`.
+  - **End Point**: Monotonic timestamp when the Server-Sent Events stream emits `event: done`, and the reader finishes parsing the complete answer text and excerpt citations.
+  - **Independence Rule**: Document upload and background processing times are **never** added to Q&A measurements.
+
+---
+
+### 2. Rate-Limit Handling (Gemini 429 & RESOURCE_EXHAUSTED)
+
+Under Google Gemini Free Tier quotas (30,000 tokens/min and 100 requests/min), large contracts can encounter API rate limits during vector embedding:
+
+- **Evidence-Based Detection**: The benchmark inspects API error payloads for verified `429` status codes, `RESOURCE_EXHAUSTED`, or `quota exceeded` markers. Ordinary slow processing is **never** classified as rate limiting without concrete error evidence.
+- **Quota Recovery Pause**: The verified waiting delay (e.g. from `retryDelay: "55s"` or `Please retry in 55.99s`) is parsed and recorded separately. The test runner pauses for the exact duration of the recovery window and then resumes processing.
+- **Adjusted vs. Actual Times**:
+  - Actual elapsed monotonic time is always preserved in `documentProcessingTimeSec` and `qnaResponseTimeSec`.
+  - Only confirmed quota waiting time is subtracted to compute the adjusted processing times.
+
+---
+
+### 3. Timing Formulas
+
+All calculations are encapsulated in [`benchmark-calculation.js`](benchmark-calculation.js):
+
+$$\text{documentProcessingTimeSec} = \frac{t_{\text{DocReady}} - t_{\text{DocUploadStart}}}{1000}$$
+
+$$\text{documentAdjustedTimeSec} = \max\left(0,\, \text{documentProcessingTimeSec} - \text{documentRateLimitWaitSec}\right)$$
+
+$$\text{qnaResponseTimeSec} = \frac{t_{\text{QnaComplete}} - t_{\text{QnaSubmit}}}{1000}$$
+
+$$\text{qnaAdjustedTimeSec} = \max\left(0,\, \text{qnaResponseTimeSec} - \text{qnaRateLimitWaitSec}\right)$$
+
+---
+
+### 4. Output JSON Fields (`benchmark_results.json`)
+
+Each benchmark record in [`benchmark_results.json`](benchmark_results.json) adheres to the following schema:
+
+| Field Name | Type | Description |
+| :--- | :---: | :--- |
+| `fileName` | `string` | Basename of the legal PDF contract |
+| `fileSizeKb` | `number` | Contract file size in kilobytes |
+| `documentProcessingTimeSec` | `number` | Actual elapsed monotonic time from upload start until risk report is ready (seconds) |
+| `documentRateLimitWaitSec` | `number` | Confirmed Gemini quota wait time during document processing (seconds, 0 if none) |
+| `documentAdjustedTimeSec` | `number` | Document processing time excluding verified quota wait (`documentProcessingTimeSec - documentRateLimitWaitSec`) |
+| `qnaResponseTimeSec` | `number` | Independent elapsed time for complete streaming Q&A response (seconds) |
+| `qnaRateLimitWaitSec` | `number` | Confirmed quota wait time during Q&A (seconds, 0 if none) |
+| `qnaAdjustedTimeSec` | `number` | Q&A response time excluding verified quota wait (`qnaResponseTimeSec - qnaRateLimitWaitSec`) |
+| `status` | `string` | Final document status (`ready` or `failed`) |
+
+---
+
+### 5. How to Run the Benchmark
+
+#### Prerequisites
+Ensure your local `.env` contains valid credentials:
+- `MONGODB_URI` (MongoDB Atlas instance)
+- `GEMINI_API_KEY` (Google Gemini API key)
+- `QDRANT_URL` & `QDRANT_API_KEY` (Qdrant Cloud vector database)
+
+#### Execution Commands
+```bash
+# Run benchmark using default contract locations
+npm run benchmark
+
+# Or specify a custom folder containing legal PDF contracts
+node run-benchmark.js "C:\path\to\your\contracts_folder"
+
+# Or run specific contract files
+node run-benchmark.js contract1.pdf contract2.pdf
+
+# Re-run all contracts fresh from scratch (ignoring cached results)
+node run-benchmark.js --fresh
+```
+
+---
+
+### 6. Actual Benchmark Results (10 Real Legal Contracts from CUAD)
+
+Evaluated across 10 commercial agreements from CUAD (*Affiliate Agreements* and *Agency Agreements*):
+
+#### Overall Statistical Summary
+
+| Benchmark Metric | Mean (Average) | Median ($p_{50}$) | Minimum | Maximum | Failure Rate |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **Document Processing Time** | **72.23 s** | **12.50 s** | 4.33 s | 341.02 s | 0.0% |
+| **Document Quota Wait Time** | 29.23 s | 0.00 s | 0.00 s | 137.54 s | - |
+| **Document Adjusted Time** | **43.00 s** | **9.55 s** | 4.33 s | 341.02 s | **0.0%** |
+| **Q&A Response Time (Independent)** | **2.66 s** | **2.57 s** | 2.08 s | 3.90 s | 0.0% |
+| **Q&A Adjusted Time** | **2.66 s** | **2.57 s** | 2.08 s | 3.90 s | **0.0%** |
+
+*Note: For contracts with >50 chunks, quota waiting reflects Gemini Free Tier 30k tokens/min replenishment windows.*
+
+#### 10-Contract Individual Measurement Breakdown
+
+| # | Legal Contract File | Size (KB) | Document Processing (s) | Quota Wait (s) | Document Adjusted (s) | Q&A Response (s) | Status |
+| :-: | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **1** | `CreditcardscomInc_Affiliate Agreement.pdf` | 130.8 | 13.11 s | 0.00 s | 13.11 s | 3.09 s | `ready` |
+| **2** | `CybergyHoldingsInc_Affiliate Agreement.pdf` | 131.2 | 6.51 s | 0.00 s | 6.51 s | 2.58 s | `ready` |
+| **3** | `DigitalCinemaDestinations_Affiliate Agreement.pdf` | 212.8 | 11.88 s | 0.00 s | 11.88 s | 2.49 s | `ready` |
+| **4** | `LinkPlusCorp_Affiliate Agreement.pdf` | 86.1 | 77.72 s | 70.49 s | 7.23 s | 2.75 s | `ready` |
+| **5** | `SouthernStarEnergyInc_Affiliate Agreement.pdf` | 86.3 | 6.41 s | 0.00 s | 6.41 s | 2.11 s | `ready` |
+| **6** | `SteelVaultCorp_Affiliate Agreement.pdf` | 79.4 | 6.55 s | 0.00 s | 6.55 s | 2.82 s | `ready` |
+| **7** | `ATHENSBANCSHARESCORP_AGENCY AGREEMENT.PDF` | 174.9 | 99.20 s | 84.23 s | 14.97 s | 2.56 s | `ready` |
+| **8** | `BONTONSTORESINC_AGENCY AGREEMENT.PDF` | 505.1 | 155.57 s | 137.54 s | 18.03 s | 2.17 s | `ready` |
+| **9** | `OLDAPIWIND-DOWNLTD_AGENCY AGREEMENT1.pdf` | 230.0 | 341.02 s | 0.00 s | 341.02 s | 3.90 s | `ready` |
+| **10** | `OLDAPIWIND-DOWNLTD_AGENCY AGREEMENT2.pdf` | 97.4 | 4.33 s | 0.00 s | 4.33 s | 2.08 s | `ready` |
 
 ---
 

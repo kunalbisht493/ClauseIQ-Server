@@ -11,6 +11,7 @@ const documentSchema = new mongoose.Schema({
   fileHash: { type: String },
   status: { type: String, enum: ['uploaded', 'processing', 'indexed', 'ready', 'failed'], default: 'uploaded' },
   chunkCount: { type: Number, default: 0 },
+  rateLimitWaitSec: { type: Number, default: 0 },
   error: String,
   uploadedAt: { type: Date, default: Date.now },
 }, { timestamps: true });

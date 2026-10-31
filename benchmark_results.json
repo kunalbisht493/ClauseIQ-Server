@@ -1,0 +1,112 @@
+[
+  {
+    "fileName": "CreditcardscomInc_20070810_S-1_EX-10.33_362297_EX-10.33_Affiliate Agreement.pdf",
+    "fileSizeKb": 130.8,
+    "documentProcessingTimeSec": 13.11,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 13.11,
+    "qnaResponseTimeSec": 3.09,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 3.09,
+    "status": "ready"
+  },
+  {
+    "fileName": "CybergyHoldingsInc_20140520_10-Q_EX-10.27_8605784_EX-10.27_Affiliate Agreement.pdf",
+    "fileSizeKb": 131.2,
+    "documentProcessingTimeSec": 6.51,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 6.51,
+    "qnaResponseTimeSec": 2.58,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.58,
+    "status": "ready"
+  },
+  {
+    "fileName": "DigitalCinemaDestinationsCorp_20111220_S-1_EX-10.10_7346719_EX-10.10_Affiliate Agreement.pdf",
+    "fileSizeKb": 212.8,
+    "documentProcessingTimeSec": 11.88,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 11.88,
+    "qnaResponseTimeSec": 2.49,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.49,
+    "status": "ready"
+  },
+  {
+    "fileName": "LinkPlusCorp_20050802_8-K_EX-10_3240252_EX-10_Affiliate Agreement.pdf",
+    "fileSizeKb": 86.1,
+    "documentProcessingTimeSec": 77.72,
+    "documentRateLimitWaitSec": 70.49,
+    "documentAdjustedTimeSec": 7.23,
+    "qnaResponseTimeSec": 2.75,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.75,
+    "status": "ready"
+  },
+  {
+    "fileName": "SouthernStarEnergyInc_20051202_SB-2A_EX-9_801890_EX-9_Affiliate Agreement.pdf",
+    "fileSizeKb": 86.3,
+    "documentProcessingTimeSec": 6.41,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 6.41,
+    "qnaResponseTimeSec": 2.11,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.11,
+    "status": "ready"
+  },
+  {
+    "fileName": "SteelVaultCorp_20081224_10-K_EX-10.16_3074935_EX-10.16_Affiliate Agreement.pdf",
+    "fileSizeKb": 79.4,
+    "documentProcessingTimeSec": 6.55,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 6.55,
+    "qnaResponseTimeSec": 2.82,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.82,
+    "status": "ready"
+  },
+  {
+    "fileName": "ATHENSBANCSHARESCORP_11_02_2009-EX-1.2-AGENCY AGREEMENT , 2009.PDF",
+    "fileSizeKb": 174.9,
+    "documentProcessingTimeSec": 99.2,
+    "documentRateLimitWaitSec": 84.23,
+    "documentAdjustedTimeSec": 14.97,
+    "qnaResponseTimeSec": 2.56,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.56,
+    "status": "ready"
+  },
+  {
+    "fileName": "BONTONSTORESINC_04_20_2018-EX-99.3-AGENCY AGREEMENT.PDF",
+    "fileSizeKb": 505.1,
+    "documentProcessingTimeSec": 155.57,
+    "documentRateLimitWaitSec": 137.54,
+    "documentAdjustedTimeSec": 18.03,
+    "qnaResponseTimeSec": 2.17,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.17,
+    "status": "ready"
+  },
+  {
+    "fileName": "OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT1.pdf",
+    "fileSizeKb": 230,
+    "documentProcessingTimeSec": 11.45,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 11.45,
+    "qnaResponseTimeSec": 3.09,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 3.09,
+    "status": "ready"
+  },
+  {
+    "fileName": "OLDAPIWIND-DOWNLTD_01_08_2016-EX-1.3-AGENCY AGREEMENT2.pdf",
+    "fileSizeKb": 97.4,
+    "documentProcessingTimeSec": 4.33,
+    "documentRateLimitWaitSec": 0,
+    "documentAdjustedTimeSec": 4.33,
+    "qnaResponseTimeSec": 2.08,
+    "qnaRateLimitWaitSec": 0,
+    "qnaAdjustedTimeSec": 2.08,
+    "status": "ready"
+  }
+]
